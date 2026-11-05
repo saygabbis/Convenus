@@ -77,8 +77,9 @@ function platformOf(url) {
 
 function baseArgs(url) {
   const args = ['--js-runtimes', 'node', '--no-playlist', '--no-warnings', '--no-color'];
-  // O WARP só é necessário pro YouTube; as outras plataformas saem direto.
-  if (PROXY && isYouTube(url)) args.push('--proxy', PROXY);
+  // Logado, o YouTube aceita a VPS direto, e um IP fixo segura a sessão por mais tempo
+  // (o IP do WARP muda e o Google acaba deslogando). O WARP fica de reserva pra quando não há login.
+  if (PROXY && isYouTube(url) && !ytLoggedIn()) args.push('--proxy', PROXY);
   if (fs.existsSync(COOKIES)) args.push('--cookies', COOKIES);
   return args;
 }

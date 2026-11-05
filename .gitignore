@@ -6,3 +6,4 @@ logs/
 .env*
 cookies.txt
 *.cookies.txt
+cookies*.txt
