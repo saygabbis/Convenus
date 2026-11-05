@@ -240,7 +240,13 @@ async function resolveInfo(url) {
       // Item que só o yt-dlp baixa (ex.: vídeo HLS do Bluesky): completa com as resoluções.
       if (post.items.some((it) => it.native)) {
         const yd = await ytdlpItems(url).catch(() => null);
-        post.items = post.items.flatMap((it) => (it.native ? (yd ? [{ ...yd.items[0], thumb: it.thumb || yd.items[0].thumb }] : []) : [it]));
+        // O k-ésimo item nativo do post corresponde ao k-ésimo vídeo que o yt-dlp achou.
+        let k = 0;
+        post.items = post.items.flatMap((it) => {
+          if (!it.native) return [it];
+          const y = yd?.items[Math.min(k++, yd.items.length - 1)];
+          return y ? [{ ...y, thumb: it.thumb || y.thumb, width: it.width || y.width, height: it.height || y.height }] : [];
+        });
         if (!post.items.length) throw new Error('Não consegui baixar o vídeo desse post.');
       }
       return { ...base, ...post, items: post.items.map((it) => ({ hasAudio: it.kind !== 'image' && !it.gif, ...it })) };

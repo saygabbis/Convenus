@@ -513,11 +513,12 @@ function renderPost() {
   $('#convert').hidden = !canConvert;
   if (canConvert) renderConvert(it, base, multi);
 
-  // Capas (vídeo do YouTube e afins)
-  const thumbs = !multi && it.native ? (i.thumbs || []) : [];
+  // Capa: tamanhos do YouTube, ou a capa do vídeo selecionado nas outras plataformas.
+  const thumbs = !multi && it.native && i.thumbs?.length ? i.thumbs
+    : it.kind === 'video' && it.thumb ? [{ label: 'Capa do vídeo', size: it.width && it.height ? `${it.width}×${it.height}` : '', url: it.thumb }] : [];
   $('#thumbsSec').hidden = thumbs.length === 0;
   $('#thumbs').innerHTML = thumbs.map((t) =>
-    `<a class="k" href="${esc(mediaLink(t.url, `${fileBase(i.title)} - capa ${t.label}`))}" download>${esc(t.label)} <small>${esc(t.size)}</small></a>`).join('');
+    `<a class="k" href="${esc(mediaLink(t.url, `${multi ? base : fileBase(i.title)} - capa${t.label.startsWith('Capa') ? '' : ` ${t.label}`}`))}" download>${esc(t.label)} <small>${esc(t.size)}</small></a>`).join('');
 
   $('#post').hidden = false;
 }

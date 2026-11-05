@@ -113,9 +113,10 @@ async function igContext(path) {
 
 function igItem(n) {
   const d = n.dimensions || {};
-  return n.is_video && n.video_url
-    ? { kind: 'video', url: n.video_url, thumb: n.display_url, width: d.width || 0, height: d.height || 0, duration: n.video_duration || 0 }
-    : { kind: 'image', url: n.display_url, thumb: n.display_url, width: d.width || 0, height: d.height || 0 };
+  if (n.is_video && n.video_url) return { kind: 'video', url: n.video_url, thumb: n.display_url, width: d.width || 0, height: d.height || 0, duration: n.video_duration || 0 };
+  // Reels às vezes vêm marcados como vídeo mas sem o link: aí quem baixa é o yt-dlp.
+  if (n.is_video) return { kind: 'video', native: true, thumb: n.display_url, width: d.width || 0, height: d.height || 0 };
+  return { kind: 'image', url: n.display_url, thumb: n.display_url, width: d.width || 0, height: d.height || 0 };
 }
 
 async function igPost(code) {
