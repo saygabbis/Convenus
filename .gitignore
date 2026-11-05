@@ -9,3 +9,7 @@ cookies.txt
 cookies*.txt
 reddit.json
 admin.token
+convenus.db
+convenus.db-*
+convenus.env
+*.new

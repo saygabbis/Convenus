@@ -1,30 +1,73 @@
 # Convenus
 
-YouTube, YouTube Music, Spotify, Deezer, Apple Music, X/Twitter, Instagram, TikTok, Bluesky, Facebook, SoundCloud, Twitch, Vimeo, Pinterest, Tumblr e outros sites que o yt-dlp suporta → **MP4** (até 4K), **MP3** (128–320 kbps) e **WAV**, além de **fotos de posts**, **capas**, **avatares** e **banners**. Sem propaganda, sem pop-up.
+Baixador privado: YouTube, YouTube Music, Spotify, Deezer, Apple Music, X/Twitter, Instagram, TikTok, Bluesky, Facebook, SoundCloud, Twitch, Vimeo, Pinterest, Tumblr e outros sites que o yt-dlp suporta → **MP4** (até 4K), **MP3** (128–320 kbps), **WAV**, **legendas (.srt ou dentro do MP4)**, **fotos de posts**, **capas**, **avatares** e **banners**. Sem propaganda, sem pop-up.
 
-Rodando em https://convert.saygabbis.cloud
+Rodando em https://convert.saygabbis.cloud (acesso só com código).
 
 ## Como funciona
 
-- `server.js`: servidor Node sem dependências que chama o [yt-dlp](https://github.com/yt-dlp/yt-dlp) + ffmpeg, com fila (2 conversões por vez) e progresso.
-- `providers.js`: posts e perfis com o arquivo original, por APIs e páginas públicas: X (FxTwitter), Bluesky (API oficial), Instagram (embed), TikTok sem marca d'água (TikWM), Vimeo (config do player), Pinterest e Tumblr (metadados da página). Spotify, Deezer e Apple Music viram lista de faixas, e o áudio vem da mesma música no YouTube Music (o áudio deles tem DRM).
-- `public/`: a página (dá pra instalar como app no celular e usar o "Compartilhar" do YouTube).
-- Os arquivos convertidos são apagados depois de 1 hora.
-- O YouTube bloqueia IP de datacenter, então o yt-dlp sai pelo **Cloudflare WARP** (via `wireproxy`, um proxy SOCKS local que não mexe na rede do sistema) e usa o [bgutil PO token provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider).
+- `server.js`: servidor Node sem dependências externas. Chama o [yt-dlp](https://github.com/yt-dlp/yt-dlp) + ffmpeg, com fila (2 conversões por vez), progresso e histórico.
+- `lib/proc.js`: processos externos com timeout total e de inatividade, saída limitada, kill do grupo inteiro e término único.
+- `lib/store.js`: tarefas e histórico em SQLite (`node:sqlite`, embutido no Node 22). Tudo sobrevive a reinícios.
+- `lib/auth.js`: acesso privado. Entra com o código do `admin.token` e recebe uma sessão assinada num cookie `HttpOnly`.
+- `lib/cookies.js`: cookies do YouTube. A renovação valida num arquivo temporário antes de trocar (de forma atômica) e guarda a versão anterior.
+- `lib/health.js`: estado do yt-dlp, ffmpeg, WARP, PO token e disco (`/api/status`).
+- `providers.js`: posts e perfis com o arquivo original, por APIs e páginas públicas (X via FxTwitter, Bluesky, Instagram embed, TikTok via TikWM, Vimeo, Pinterest, Tumblr). Spotify, Deezer e Apple Music viram lista de faixas, e o áudio vem da mesma música no YouTube Music.
+- `public/`: a página (instalável como app; aceita o "Compartilhar" do celular).
+
+O YouTube bloqueia IP de datacenter. Com a conta logada (`cookies.txt`), o yt-dlp sai direto pelo IP da VPS. Sem login, sai pelo **Cloudflare WARP** (`wireproxy`, proxy SOCKS local) e **sem cookie nenhum**. O [bgutil PO token provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider) roda junto.
 
 ## Rodar
 
 ```bash
 npm run setup      # instala ffmpeg, yt-dlp, wireproxy, WARP e o PO token provider
-npm run start:vps  # sobe tudo (WARP + PO token + site em 127.0.0.1:5180)
+npm run start:vps  # modo screen: WARP + PO token + site em 127.0.0.1:5180
+npm test           # testes (unidade + integração com yt-dlp falso, sem rede)
 ```
 
-Logs em `logs/`. Health check: `curl http://127.0.0.1:5180/health`.
+Em produção, o recomendado são os serviços systemd de `deploy/systemd/` (veja `docs/IMPLANTACAO.md`).
 
-Cookies: coloque um `cookies.txt` (formato Netscape, de uma conta Google **descartável**) na raiz do projeto, com `chmod 600`. Ele nunca vai pro git.
+- **Acesso:** o código fica em `admin.token` (`cat ~/Bots/Convert/admin.token`). Pra trocar o código e deslogar todos os aparelhos: `printf 'novo' > admin.token` e reinicie o site.
+- **Cookies do YouTube:** pela página `/renovar`, no site. Eles nunca vão pro git.
+- **Arquivos:** ficam em `downloads/` por 24 h (`JOB_TTL_MIN`) e o histórico por 30 dias (`HISTORY_DAYS`). O start **não** apaga nada; a limpeza é por idade e nunca toca tarefa ativa.
 
-Variáveis opcionais: `PORT` (5180), `YTDLP_COOKIES` (`./cookies.txt`), `YTDLP_PROXY` (`socks5://127.0.0.1:40000`; vazio = sem proxy), `MAX_RUNNING` (2), `JOB_TTL_MIN` (60).
+### Variáveis opcionais
 
-## nginx
+| Variável | Padrão | O que é |
+|---|---|---|
+| `PORT` / `HOST` | `5180` / `127.0.0.1` | onde o site escuta |
+| `DATA_DIR` | pasta do projeto | banco, `admin.token`, cookies, `downloads/` |
+| `YTDLP` | `~/.local/bin/yt-dlp` | binário do yt-dlp |
+| `YTDLP_PROXY` | `socks5://127.0.0.1:40000` | WARP (vazio = sem proxy) |
+| `POT_URL` | `http://127.0.0.1:4416` | PO token provider (só pro status) |
+| `MAX_RUNNING` | `2` | conversões ao mesmo tempo |
+| `JOB_TTL_MIN` | `1440` | minutos que um arquivo pronto fica disponível |
+| `HISTORY_DAYS` | `30` | dias de histórico no banco |
+| `JOB_TIMEOUT_MIN` / `JOB_IDLE_MIN` | `240` / `10` | tempo máximo de uma tarefa / sem progresso = travada |
+| `INFO_TIMEOUT_SEC` | `120` | tempo máximo de uma busca |
+| `MIN_FREE_GB` | `2` | abaixo disso, recusa tarefas novas |
 
-Proxy de `convert.saygabbis.cloud` → `127.0.0.1:5180` com `proxy_buffering off` e `proxy_read_timeout` alto (arquivos grandes).
+### Rotas
+
+Todas exigem login, menos `/entrar`, `/api/login`, os ícones do app e o `/health`. O `/health` público só diz `{"ok":true}`; o detalhe só aparece pra pedidos feitos de dentro da VPS. Pedidos que mudam estado vindos de outro site (cabeçalho `Origin` diferente) são recusados.
+
+| Rota | O que faz |
+|---|---|
+| `POST /api/login` / `POST /api/logout` | entra (com limite de tentativas) / sai |
+| `POST /api/info` | busca um link (`{url, page}`; playlists vêm em páginas de 200) |
+| `GET /api/jobs` | histórico (do banco) |
+| `POST /api/jobs` | cria uma tarefa (`mp4`, `mp3`, `wav`, `srt`; legenda em `subs: {lang, embed}`) |
+| `GET /api/jobs/:id`, `DELETE`, `/file` | acompanha, cancela, baixa |
+| `GET /api/media` | baixa foto/vídeo direto de CDNs permitidos |
+| `GET /api/status` | saúde completa (yt-dlp, ffmpeg, WARP, PO token, disco, fila, login do YouTube) |
+| `POST /api/cookies` | renova os cookies do YouTube (valida antes de trocar) |
+
+## yt-dlp
+
+`scripts/update-ytdlp.sh` atualiza com segurança, em vez do `yt-dlp -U` direto em produção:
+1. baixa a versão nova à parte e testa num link público, sem cookies;
+2. espera a fila esvaziar;
+3. guarda a anterior em `yt-dlp.prev` e troca de forma atômica;
+4. testa de novo e, se falhar, volta a anterior.
+
+Ele roda a cada 12 h, pelo timer do systemd ou pelo `start-vps.sh`.
