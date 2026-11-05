@@ -257,6 +257,55 @@ async function ytdlpItems(url) {
   };
 }
 
+// Playlist do YouTube/YouTube Music ou set do SoundCloud: lista leve (sem consultar vídeo por vídeo).
+function isPlaylistUrl(url) {
+  const u = new URL(url);
+  if (YT_HOSTS.test(u.hostname)) return u.pathname === '/playlist' || (u.searchParams.has('list') && !u.searchParams.has('v') && !/youtu\.be$/i.test(u.hostname));
+  return /(^|\.)soundcloud\.com$/i.test(u.hostname) && /\/sets\//.test(u.pathname);
+}
+
+async function flatPlaylist(url) {
+  const raw = await withYt(url, () => runCapture([...baseArgs(url), '-J', '--flat-playlist', '--playlist-end', '200', '--', url]));
+  const j = JSON.parse(raw);
+  const audio = /soundcloud\.com/i.test(url);
+  const items = (j.entries || []).filter((e) => e && (e.url || e.id)).map((e) => {
+    const thumb = (e.thumbnails || []).filter((t) => t.url).sort((a, b) => (b.width || 0) - (a.width || 0))[0]?.url
+      || (e.id && !audio ? `https://i.ytimg.com/vi/${e.id}/mqdefault.jpg` : null);
+    return {
+      kind: audio ? 'audio' : 'video',
+      native: true,
+      entryUrl: e.url?.startsWith('http') ? e.url : `https://www.youtube.com/watch?v=${e.id}`,
+      // Sem consultar cada vídeo não dá pra saber as resoluções: oferece as comuns (0 = melhor).
+      heights: audio ? [] : [0, 1080, 720, 480, 360],
+      hasAudio: true,
+      thumb,
+      duration: e.duration || 0,
+      label: clean(e.title || slugTitle(e.url) || 'Sem título', 120),
+    };
+  });
+  if (!items.length) throw new Error('Essa playlist tá vazia ou é privada.');
+  if (isYouTube(url)) ytState.lastOkAt = Date.now();
+  return {
+    id: j.id,
+    title: j.title || 'Playlist',
+    uploader: j.channel || j.uploader || '',
+    thumbnail: items[0].thumb,
+    playlist: true,
+    total: j.playlist_count || items.length,
+    items,
+    thumbs: [],
+  };
+}
+
+// "https://soundcloud.com/forss/city-ports" -> "City ports"
+function slugTitle(u) {
+  const slug = String(u || '').split(/[?#]/)[0].split('/').filter(Boolean).pop() || '';
+  const t = decodeURIComponent(slug).replace(/[-_]+/g, ' ').trim();
+  return t ? t[0].toUpperCase() + t.slice(1) : '';
+}
+
+const clean = (s, n) => Array.from(String(s || '').replace(/\s+/g, ' ').trim()).slice(0, n).join('');
+
 async function resolveInfo(url) {
   if (isChannelUrl(url)) return getChannel(url);
 
@@ -292,7 +341,13 @@ async function resolveInfo(url) {
     // Sem a API (fora do ar, post privado…): tenta pelo yt-dlp.
   }
 
-  return { ...base, ...(await ytdlpItems(url)) };
+  if (isPlaylistUrl(url)) return { ...base, ...(await flatPlaylist(url)) };
+
+  const info = { ...base, ...(await ytdlpItems(url)) };
+  // Vídeo aberto dentro de uma playlist: oferece abrir a playlist inteira.
+  const list = isYouTube(url) && new URL(url).searchParams.get('list');
+  if (list && !/^(RD|UL)/.test(list)) info.playlistUrl = `https://www.youtube.com/playlist?list=${encodeURIComponent(list)}`;
+  return info;
 }
 
 function jobArgs(job) {
@@ -303,7 +358,7 @@ function jobArgs(job) {
     '--print', 'after_move:@@F %(filepath)s',
     '--windows-filenames',
     '-P', job.dir,
-    '-o', job.mode === 'search' ? `${safeName(job.title)}.%(ext)s` : '%(title).150B.%(ext)s',
+    '-o', job.mode === 'search' || job.named ? `${safeName(job.title)}.%(ext)s` : '%(title).150B.%(ext)s',
   ];
 
   if (job.kind === 'mp4') {
@@ -463,10 +518,10 @@ async function startJob(job) {
   p.on('close', (code) => finishJob(job, code, stderr));
 }
 
-function createJob({ mode = 'native', url, index = null, duration = 0, kind, quality, title }) {
+function createJob({ mode = 'native', url, index = null, named = false, duration = 0, kind, quality, title }) {
   const id = crypto.randomBytes(8).toString('hex');
   const job = {
-    id, mode, url, index, duration, kind, quality, title: String(title || '').slice(0, 300),
+    id, mode, url, index, named, duration, kind, quality, title: String(title || '').slice(0, 300),
     dir: path.join(DOWNLOAD_DIR, id),
     status: 'queued', phase: 'Na fila', percent: 0, lastPct: 0, speed: '', eta: '',
     error: null, file: null, size: 0, createdAt: Date.now(), finishedAt: 0, proc: null,
@@ -685,7 +740,7 @@ const server = http.createServer(async (req, res) => {
         // Música (Spotify, Deezer, Apple Music): baixa a mesma faixa da aba de músicas do YouTube Music.
         ? { mode: 'search', url: `https://music.youtube.com/search?q=${encodeURIComponent(item.search)}#songs`, kind, quality, title }
         : item.native
-          ? { mode: 'native', url, index: item.index, kind, quality, title }
+          ? { mode: 'native', url: item.entryUrl || url, index: item.entryUrl ? null : item.index, named: Boolean(item.entryUrl), kind, quality, title }
           : { mode: 'direct', url: item.url, duration: item.duration, kind, quality, title };
       return sendJson(res, 201, publicJob(createJob(spec)));
     }

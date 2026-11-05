@@ -163,6 +163,8 @@
   .trk:hover { background: var(--fill); }
   .trk.sel { background: var(--ac-soft); }
   .trk img, .trk .ph { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; flex: none; background: var(--fill); }
+  .tracks.wide .trk img, .tracks.wide .trk .ph { width: 96px; height: 54px; }
+  .sec-head .btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
   .trk .n { width: 22px; text-align: right; font-size: 12px; color: var(--mut); flex: none; }
   .trk .t { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .trk .d { font-size: 12px; color: var(--mut); flex: none; }
@@ -224,7 +226,12 @@
   .alert p strong { font-weight: 600; }
   .alert .k { flex: none; }
 
-  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    /* Indicadores de progresso continuam: sem eles parece que travou. */
+    .spin { animation: spin 1s linear infinite !important; }
+    .track.busy i { animation: breathe 1.4s ease-in-out infinite !important; }
+  }
 </style>
 </head>
 <body>
@@ -274,7 +281,7 @@
         <div class="sec" id="gallerySec" hidden>
           <div class="sec-head">
             <p class="label mut" id="galleryLabel"></p>
-            <button class="k" type="button" id="allPhotos" hidden></button>
+            <span class="btns"><button class="k" type="button" id="allVideos" hidden></button><button class="k" type="button" id="allPhotos" hidden></button></span>
           </div>
           <div class="gallery" id="gallery"></div>
         </div>
@@ -523,6 +530,8 @@ function renderPost() {
     i.avatar ? `<img src="${esc(i.avatar)}" alt="" referrerpolicy="no-referrer">` : '',
     `<span>${esc([...new Set([i.platform, i.uploader].filter(Boolean))].join(' · '))}</span>`,
     i.avatar ? `<a class="k" href="${esc(mediaLink(i.avatar, `${fileBase(i.uploader || i.platform)} - foto de perfil`))}" download>Baixar foto de perfil</a>` : '',
+    i.playlistUrl ? `<button class="k" type="button" id="openList">Abrir a playlist inteira</button>` : '',
+    i.playlist ? `<span>${i.total > i.items.length ? `${i.items.length} de ${i.total} vídeos` : ''}</span>` : '',
   ].join('');
 
   // Galeria (post com vários itens ou com foto)
@@ -533,12 +542,15 @@ function renderPost() {
         const count = (k, one, many) => { const c = i.items.filter((x) => x.kind === k).length; return c ? `${c} ${c > 1 ? many : one}` : ''; };
     const parts = [count('image', 'foto', 'fotos'), count('video', 'vídeo', 'vídeos'), count('audio', 'áudio', 'áudios')].filter(Boolean);
     $('#galleryLabel').textContent = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} e ${parts.at(-1)}` : parts[0];
-    const tracks = i.items.every((x) => x.kind === 'audio');
+    const tracks = i.playlist || i.items.every((x) => x.kind === 'audio');
+    const vidList = tracks && i.items.some((x) => x.kind === 'video');
     $('#allPhotos').hidden = !(photos > 1 || (tracks && i.items.length > 1));
     $('#allPhotos').innerHTML = tracks ? `${svg('dl', 14)}Baixar todas em MP3` : `${svg('dl', 14)}Baixar ${photos} fotos`;
-    $('#gallery').className = tracks ? 'tracks' : 'gallery';
+    $('#allVideos').hidden = !(vidList && i.items.length > 1);
+    $('#allVideos').innerHTML = `${svg('dl', 14)}Baixar todas em MP4`;
+    $('#gallery').className = tracks ? `tracks${vidList ? ' wide' : ''}` : 'gallery';
     if (tracks) {
-      $('#galleryLabel').textContent = `${i.items.length} ${i.items.length > 1 ? 'faixas' : 'faixa'}`;
+      $('#galleryLabel').textContent = vidList ? `${i.items.length} ${i.items.length > 1 ? 'vídeos' : 'vídeo'}` : `${i.items.length} ${i.items.length > 1 ? 'faixas' : 'faixa'}`;
       $('#gallery').innerHTML = i.items.map((x, n) => `<div class="trk${n === state.sel ? ' sel' : ''}" data-n="${n}" role="button" tabindex="0" style="animation-delay:${Math.min(n, 20) * 25}ms">
         <span class="n">${n + 1}</span>${x.thumb ? `<img src="${esc(x.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="ph"></span>'}
         <span class="t">${esc(x.label || `Faixa ${n + 1}`)}</span><span class="d">${x.duration ? fmtDur(x.duration) : ''}</span></div>`).join('');
@@ -553,7 +565,7 @@ function renderPost() {
       </div>`;
     }).join('');
   }
-  if (state.info.items.every((x) => x.kind === 'audio') && it.label) $('#pTitle').textContent = it.label;
+  if (!i.playlist && i.items.every((x) => x.kind === 'audio') && it.label) $('#pTitle').textContent = it.label;
 
   // Conversor do item selecionado
   const canConvert = it.kind !== 'image';
@@ -574,7 +586,9 @@ function renderConvert(it, base, multi) {
   const avail = { mp4: it.kind === 'video', mp3: it.hasAudio, wav: it.hasAudio };
   if (!avail[state.kind]) state.kind = Object.keys(avail).find((k) => avail[k]) || 'mp4';
   $('#convertLabel').hidden = !multi;
-  $('#convertLabel').textContent = `Item ${state.sel + 1} de ${state.info.items.length}: ${KIND_NAME[it.kind].toLowerCase()}`;
+  $('#convertLabel').textContent = it.label
+    ? `${state.sel + 1}. ${it.label}`
+    : `Item ${state.sel + 1} de ${state.info.items.length}: ${KIND_NAME[it.kind].toLowerCase()}`;
 
   const tabs = [['mp4', 'MP4', 'video'], ['mp3', 'MP3', 'music'], ['wav', 'WAV', 'wave']].filter(([k]) => avail[k]);
   const tabEl = document.querySelector('.tabs');
@@ -635,7 +649,7 @@ $('#gallery').addEventListener('keydown', (e) => {
 });
 $('#allPhotos').addEventListener('click', async () => {
   const i = state.info;
-  if (i.items.every((x) => x.kind === 'audio')) return convertAll();
+  if (i.playlist || i.items.every((x) => x.kind === 'audio')) return convertAll('mp3', $('#allPhotos'));
   for (const [n, x] of i.items.entries()) {
     if (x.kind !== 'image') continue;
     triggerDownload(mediaLink(x.url, nameFor(i, n)));
@@ -712,12 +726,19 @@ async function startJob(n, kind, quality) {
   poll();
 }
 
-async function convertAll() {
-  const btn = $('#allPhotos');
+$('#allVideos').addEventListener('click', () => convertAll('mp4', $('#allVideos')));
+$('#pWho').addEventListener('click', (e) => {
+  if (!e.target.closest('#openList')) return;
+  $('#url').value = state.info.playlistUrl;
+  lookup(state.info.playlistUrl);
+});
+
+async function convertAll(kind, btn) {
   btn.disabled = true;
   const n = Math.min(state.info.items.length, 100);
+  const quality = kind === 'mp4' ? (state.quality.mp4 ?? 720) : state.quality.mp3;
   try {
-    for (let k = 0; k < n; k++) await startJob(k, 'mp3', state.quality.mp3);
+    for (let k = 0; k < n; k++) await startJob(k, kind, quality);
   } catch (e) {
     alert(e.message);
   } finally {
