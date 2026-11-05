@@ -1,0 +1,12 @@
+[Unit]
+Description=Convenus: atualização segura do yt-dlp (testa antes, volta a anterior se falhar)
+After=network-online.target convenus.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=gabbis
+WorkingDirectory=/home/gabbis/Bots/Convert
+Environment=PATH=/home/gabbis/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/bash scripts/update-ytdlp.sh
+TimeoutStartSec=45min

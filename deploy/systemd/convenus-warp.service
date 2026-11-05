@@ -1,0 +1,19 @@
+[Unit]
+Description=Convenus: Cloudflare WARP (SOCKS5 local pro YouTube sem login)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=gabbis
+WorkingDirectory=/home/gabbis/Bots/Convert
+ExecStart=/home/gabbis/.local/bin/wireproxy -s -c warp/wireproxy.conf
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

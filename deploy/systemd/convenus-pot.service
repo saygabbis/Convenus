@@ -1,0 +1,19 @@
+[Unit]
+Description=Convenus: bgutil PO token provider (127.0.0.1:4416)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=gabbis
+WorkingDirectory=/home/gabbis/Bots/Convert/pot-provider/server
+ExecStart=/usr/bin/node build/main.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

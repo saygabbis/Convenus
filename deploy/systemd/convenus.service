@@ -1,0 +1,28 @@
+[Unit]
+Description=Convenus (site, 127.0.0.1:5180)
+After=network-online.target convenus-warp.service convenus-pot.service
+# Wants, não Requires: sem WARP ou PO token o site continua no ar (só o YouTube sem login sofre).
+Wants=network-online.target convenus-warp.service convenus-pot.service
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=gabbis
+WorkingDirectory=/home/gabbis/Bots/Convert
+Environment=NODE_ENV=production
+Environment=PATH=/home/gabbis/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Configurações opcionais (porta, prazos…) num arquivo fora do git, se quiser.
+EnvironmentFile=-/home/gabbis/Bots/Convert/convenus.env
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning server.js
+Restart=always
+RestartSec=3
+# SIGTERM = encerramento gracioso (tarefas voltam pra fila); depois de 30 s, SIGKILL.
+KillSignal=SIGTERM
+KillMode=mixed
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
