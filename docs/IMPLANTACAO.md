@@ -27,12 +27,12 @@ git merge --ff-only origin/manutencao-estabilidade   # ou depois do merge do PR
 npm test                                             # tem que dar "fail 0"
 ```
 
-Reiniciar a screen (graceful: as tarefas em andamento voltam pra fila e continuam depois):
+Reiniciar a screen (gracioso: as tarefas em andamento voltam pra fila e continuam depois). O Ctrl+C encerra o script **e a própria screen**, então ela precisa ser criada de novo:
 
 ```bash
 screen -S Convert -X stuff $'\003'      # Ctrl+C; o site salva as tarefas e sai
-# espere uns 15 s e confira que não sobrou: pgrep -af "node.*server.js"
-screen -S Convert -X stuff $'npm run start:vps\r'
+# espere a screen sumir (uns 15 s): screen -ls | grep Convert
+screen -dmS Convert bash -c 'cd /home/gabbis/Bots/Convert && npm run start:vps; exec bash'
 curl -s http://127.0.0.1:5180/health    # detalhe completo (só de dentro da VPS)
 ```
 
