@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Convenus</title>
-<meta name="description" content="YouTube pra MP4, MP3 e WAV, capas, avatares e banners. Sem propaganda.">
+<meta name="description" content="Baixe vídeos, músicas, fotos e perfis do YouTube, X, Instagram, TikTok, Bluesky e mais. Sem propaganda.">
 <meta name="theme-color" content="#e9edf2">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
@@ -32,6 +32,7 @@
     --ok: #2f8f63;
     --err: #b8382e;
     --shadow: 0 1px 2px rgb(30 40 60 / .04), 0 12px 32px -18px rgb(30 40 60 / .18);
+    --pf: var(--ac);
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -95,13 +96,13 @@
   .k[aria-pressed="true"], .k[aria-selected="true"] { background: var(--ac-soft); color: var(--ac-text); transform: none; }
   .k:disabled { opacity: .5; cursor: default; transform: none; }
   .k small { color: var(--mut); font-weight: 400; font-size: 12px; }
-  .k:focus-visible, .cta:focus-visible, input:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+  .k:focus-visible, .cta:focus-visible, input:focus-visible, .tile:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
   .icon-btn { width: 46px; height: 46px; padding: 0; flex: none; }
 
   .cta {
     font: inherit; font-weight: 600; font-size: 16px; width: 100%; padding: 17px; border: 0; border-radius: 18px; cursor: pointer;
     background: var(--cta); color: var(--cta-ink); display: flex; align-items: center; justify-content: center; gap: 10px;
-    transition: transform .3s cubic-bezier(.34,1.56,.64,1), filter .25s;
+    text-decoration: none; transition: transform .3s cubic-bezier(.34,1.56,.64,1), filter .25s;
   }
   .cta:hover { transform: translateY(-2px); filter: brightness(1.06); }
   .cta:active { transform: scale(.99); }
@@ -112,38 +113,47 @@
   .field { flex: 1 1 240px; min-width: 0; display: flex; align-items: center; gap: 10px; background: var(--fill); border-radius: 16px; padding: 0 16px; }
   .field input { flex: 1; min-width: 0; font: inherit; font-size: 15px; color: var(--ink); background: transparent; border: 0; outline: none; padding: 15px 0; }
   .field input::placeholder { color: var(--mut); }
-  .search .k { padding: 15px 22px; flex: 0 0 auto; }
-  @media (max-width: 520px) { .search .k { flex: 1 1 100%; } }
+  .search > .k { padding: 15px 22px; flex: 0 0 auto; }
+  @media (max-width: 520px) { .search > .k { flex: 1 1 100%; } }
   .loading { display: flex; align-items: center; gap: 10px; padding: 4px 6px 2px; font-size: 14px; width: 100%; }
-  .spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--fill); border-top-color: var(--ac); animation: spin .7s linear infinite; }
+  .spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--fill); border-top-color: var(--pf); animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .sites { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 4px 2px; font-size: 12px; }
-  .sites span { background: var(--fill); border-radius: 99px; padding: 3px 10px; }
-  .media { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  @media (min-width: 640px) { .media { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-  .tile { display: flex; flex-direction: column; gap: 8px; text-decoration: none; color: inherit; animation: rise .5s cubic-bezier(.22,1,.36,1) both; }
-  .tile .pic { aspect-ratio: 1; border-radius: 16px; overflow: hidden; background: var(--fill); position: relative; }
-  .tile .pic img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .4s cubic-bezier(.22,1,.36,1); }
-  .tile:hover .pic img { transform: scale(1.05); }
-  .tile .pic .tag { position: absolute; left: 8px; bottom: 8px; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 7px; background: rgb(0 0 0 / .55); color: #fff; }
-  .tile .k { width: 100%; padding: 9px; font-size: 13px; }
+  .sites { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 4px; font-size: 12px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; background: var(--fill); border-radius: 99px; padding: 3px 10px 3px 8px; font-size: 12px; color: var(--mut); transition: background .25s, color .25s; }
+  .pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--mut)); flex: none; }
+  .pill.on { background: color-mix(in srgb, var(--c) 16%, var(--fill)); color: var(--ink); }
   .msg-err { width: 100%; padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); font-size: 14px; }
 
-  /* vídeo */
-  .video { padding: 20px; }
-  .vhead { display: flex; flex-direction: column; gap: 18px; }
-  .thumb { position: relative; border-radius: 18px; overflow: hidden; background: var(--fill); aspect-ratio: 16 / 9; width: 100%; flex: none; }
-  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .thumb .dur { position: absolute; right: 10px; bottom: 10px; font-size: 12px; font-weight: 500; padding: 3px 9px; border-radius: 8px; background: rgb(0 0 0 / .55); color: #fff; }
-  .vtitle { margin: 0 0 4px; font-size: 18px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+  /* post */
+  .post { padding: 20px; }
+  .phead { display: flex; flex-direction: column; gap: 18px; }
+  .cover { position: relative; border-radius: 18px; overflow: hidden; background: var(--fill); aspect-ratio: 16 / 9; width: 100%; flex: none; }
+  .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cover .dur { position: absolute; right: 10px; bottom: 10px; font-size: 12px; font-weight: 500; padding: 3px 9px; border-radius: 8px; background: rgb(0 0 0 / .55); color: #fff; }
+  .ptitle { margin: 0 0 8px; font-size: 17px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .who { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; }
+  .who img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; background: var(--fill); }
+  .who .k { padding: 5px 11px; font-size: 12px; border-radius: 10px; }
   @media (min-width: 640px) {
-    .video { padding: 30px; }
-    .vhead { flex-direction: row; align-items: center; gap: 26px; }
-    .thumb { width: 296px; }
-    .vtitle { font-size: 21px; }
+    .post { padding: 30px; }
+    .phead { flex-direction: row; align-items: center; gap: 26px; }
+    .cover { width: 296px; }
+    .ptitle { font-size: 20px; }
   }
 
-  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 26px 0 22px; }
+  .gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  @media (min-width: 640px) { .gallery { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  .tile { display: flex; flex-direction: column; gap: 8px; border-radius: 18px; padding: 6px; background: transparent; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; transition: background .25s; animation: rise .5s cubic-bezier(.22,1,.36,1) both; }
+  .tile.sel { background: var(--ac-soft); }
+  .tile .pic { aspect-ratio: 1; border-radius: 14px; overflow: hidden; background: var(--fill); position: relative; display: flex; align-items: center; justify-content: center; color: var(--mut); }
+  .tile .pic img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .4s cubic-bezier(.22,1,.36,1); }
+  .tile:hover .pic img { transform: scale(1.05); }
+  .tile .tag { position: absolute; left: 8px; bottom: 8px; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 7px; background: rgb(0 0 0 / .55); color: #fff; display: inline-flex; gap: 4px; align-items: center; }
+  .tile .play { position: absolute; width: 38px; height: 38px; border-radius: 50%; background: rgb(0 0 0 / .45); display: flex; align-items: center; justify-content: center; color: #fff; }
+  .tile .k { width: 100%; padding: 9px; font-size: 13px; }
+  .tile.sel .k { background: var(--card); }
+
+  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0 0 22px; }
   .tabs .k { flex-direction: column; gap: 6px; padding: 16px 6px; border-radius: 18px; font-size: 15px; }
   .label { font-size: 13px; margin: 0 0 12px; }
   .chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
@@ -151,17 +161,21 @@
   .note { font-size: 12px; margin: -12px 0 20px; }
   .thumbs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   @media (min-width: 640px) { .thumbs { grid-template-columns: repeat(4, minmax(0, 1fr)); } .thumbs .k { flex-direction: column; gap: 0; } }
-  .section-gap { margin-top: 28px; }
+  .sec { margin-top: 28px; }
+  .sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  .sec-head .label { margin: 0; }
+  .sec-head .k { padding: 7px 12px; font-size: 12px; border-radius: 10px; }
 
-  /* canal */
-  .channel { padding: 12px; overflow: hidden; }
-  .banner { border-radius: 18px; background: var(--fill); aspect-ratio: 6.2 / 1; min-height: 80px; overflow: hidden; }
+  /* perfil */
+  .profile { padding: 12px; overflow: hidden; }
+  .banner { border-radius: 18px; background: var(--fill); aspect-ratio: 4 / 1; min-height: 80px; overflow: hidden; }
+  .banner.none { aspect-ratio: auto; min-height: 64px; background: color-mix(in srgb, var(--pf) 14%, var(--fill)); }
   .banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .chead { display: flex; align-items: flex-end; gap: 14px; margin: -30px 12px 0; position: relative; }
-  .avatar { width: 76px; height: 76px; border-radius: 50%; background: var(--card); padding: 5px; flex: none; }
+  .avatar { width: 80px; height: 80px; border-radius: 50%; background: var(--card); padding: 5px; flex: none; }
   .avatar img, .avatar span { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; background: var(--fill); }
   .cname { font-weight: 600; font-size: 17px; overflow-wrap: anywhere; }
-  .cbtns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 20px 12px 12px; }
+  .cbtns { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 20px 12px 12px; }
 
   /* conversões */
   .jobs { padding: 22px; }
@@ -213,61 +227,50 @@
   <div class="layout">
     <div class="col">
       <form class="card search" id="form" autocomplete="off">
-        <label for="url" class="sr">Link do YouTube</label>
+        <label for="url" class="sr">Link</label>
         <div class="field">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="mut" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
           <input type="url" id="url" placeholder="Cola um link de vídeo, post ou perfil" inputmode="url" required>
         </div>
         <button class="k" type="button" id="paste">Colar</button>
-        <div class="sites mut" id="sites"></div>
-        <div class="loading mut" id="loading" hidden><span class="spin"></span>Buscando no YouTube…</div>
+        <div class="sites" id="sites"></div>
+        <div class="loading mut" id="loading" hidden><span class="spin"></span><span id="loadingText">Buscando…</span></div>
         <div class="msg-err" id="formErr" hidden></div>
       </form>
 
-      <section class="card video" id="video" hidden>
-        <div class="vhead">
-          <div class="thumb"><img id="vThumb" alt="" referrerpolicy="no-referrer"><span class="dur" id="vDur"></span></div>
-          <div style="min-width:0">
-            <h2 class="vtitle" id="vTitle"></h2>
-            <div class="mut" id="vMeta"></div>
+      <section class="card post" id="post" hidden>
+        <div class="phead">
+          <div class="cover" id="cover"><img id="pCover" alt="" referrerpolicy="no-referrer"><span class="dur" id="pDur"></span></div>
+          <div style="min-width:0;flex:1">
+            <h2 class="ptitle" id="pTitle"></h2>
+            <div class="who mut" id="pWho"></div>
           </div>
         </div>
 
-        <div id="convert">
-        <div class="tabs" role="tablist" aria-label="Formato">
-          <button class="k" type="button" role="tab" data-kind="mp4">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9v6l5-3z"/></svg>MP4
-          </button>
-          <button class="k" type="button" role="tab" data-kind="mp3">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>MP3
-          </button>
-          <button class="k" type="button" role="tab" data-kind="wav">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12h1M7 8v8M11 4v16M15 7v10M19 10v4"/></svg>WAV
-          </button>
+        <div class="sec" id="gallerySec" hidden>
+          <div class="sec-head">
+            <p class="label mut" id="galleryLabel"></p>
+            <button class="k" type="button" id="allPhotos" hidden></button>
+          </div>
+          <div class="gallery" id="gallery"></div>
         </div>
 
-        <p class="label mut" id="qLabel">Qualidade</p>
-        <div class="chips" id="chips"></div>
-        <p class="note mut" id="note" hidden></p>
-
-        <button class="cta" type="button" id="go">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
-          <span id="goLabel">Converter</span>
-        </button>
+        <div class="sec" id="convert" hidden>
+          <p class="label mut" id="convertLabel" hidden></p>
+          <div class="tabs" role="tablist" aria-label="Formato"></div>
+          <p class="label mut" id="qLabel">Qualidade</p>
+          <div class="chips" id="chips"></div>
+          <p class="note mut" id="note" hidden></p>
+          <div id="goWrap"></div>
         </div>
 
-        <div class="section-gap" id="mediaWrap" hidden>
-          <p class="label mut" id="mediaLabel">Fotos do post</p>
-          <div class="media" id="media"></div>
-        </div>
-
-        <div class="section-gap" id="thumbsWrap" hidden>
+        <div class="sec" id="thumbsSec" hidden>
           <p class="label mut">Baixar capa</p>
           <div class="thumbs" id="thumbs"></div>
         </div>
       </section>
 
-      <section class="card channel" id="channel" hidden>
+      <section class="card profile" id="profile" hidden>
         <div class="banner" id="cBanner"></div>
         <div class="chead">
           <div class="avatar" id="cAvatar"></div>
@@ -277,7 +280,7 @@
           </div>
         </div>
         <div class="cbtns">
-          <a class="k" id="cAvatarBtn" download>Baixar avatar</a>
+          <a class="k" id="cAvatarBtn" download>Baixar foto de perfil</a>
           <a class="k" id="cBannerBtn" download>Baixar banner</a>
         </div>
       </section>
@@ -297,16 +300,39 @@
           Nada por aqui ainda.<br>Cola um link pra começar.
         </div>
       </section>
-      <footer class="mut">Os arquivos somem em 1 hora.</footer>
+      <footer class="mut">Os arquivos convertidos somem em 1 hora.</footer>
     </div>
   </div>
 </div>
 
 <script>
 const $ = (s) => document.querySelector(s);
-const state = { info: null, url: '', kind: 'mp4', quality: { mp4: null, mp3: '320' }, jobs: [] };
+const state = { info: null, url: '', sel: 0, kind: 'mp4', quality: { mp4: null, mp3: '320' }, variant: 0, jobs: [] };
 const RES_NAMES = { 4320: '8K', 2160: '4K', 1440: '2K', 1080: 'Full HD', 720: 'HD' };
 const ACTIVE = ['queued', 'running'];
+
+// Plataformas: nome, cor e como reconhecer pelo link.
+const PLATFORMS = [
+  { name: 'YouTube', color: '#ff3b30', re: /(^|\.)(youtube\.com|youtu\.be)$/ },
+  { name: 'X', label: 'X / Twitter', color: '#8b98a5', re: /(^|\.)(x\.com|twitter\.com|fxtwitter\.com|vxtwitter\.com|fixupx\.com)$/ },
+  { name: 'Instagram', color: '#e1306c', re: /(^|\.)instagram\.com$/ },
+  { name: 'TikTok', color: '#25c4c0', re: /(^|\.)tiktok\.com$/ },
+  { name: 'Bluesky', color: '#1185fe', re: /(^|\.)bsky\.app$/ },
+  { name: 'Facebook', color: '#1877f2', re: /(^|\.)(facebook\.com|fb\.watch)$/ },
+  { name: 'SoundCloud', color: '#ff5500', re: /(^|\.)soundcloud\.com$/ },
+  { name: 'Twitch', color: '#9146ff', re: /(^|\.)twitch\.tv$/ },
+  { name: 'Pinterest', color: '#e60023', re: /(^|\.)(pinterest\.[a-z.]+|pin\.it)$/ },
+  { name: 'Streamable', color: '#0f90fa', re: /(^|\.)streamable\.com$/ },
+];
+const platformByName = (n) => PLATFORMS.find((p) => p.name === n || p.label === n);
+function platformOfUrl(u) {
+  try { const h = new URL(u).hostname.toLowerCase(); return PLATFORMS.find((p) => p.re.test(h)) || null; } catch { return null; }
+}
+function setPlatform(p) {
+  document.documentElement.style.setProperty('--pf', p?.color || 'var(--ac)');
+  document.querySelectorAll('.pill').forEach((el) => el.classList.toggle('on', el.dataset.name === p?.name));
+}
+
 const ICONS = {
   moon: '<path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
@@ -316,6 +342,11 @@ const ICONS = {
   wait: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
   dl: '<path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  play: '<path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/>',
+  music: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+  video: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9v6l5-3z"/>',
+  wave: '<path d="M3 12h1M7 8v8M11 4v16M15 7v10M19 10v4"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
 };
 const svg = (name, size = 18, sw = 2.2) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
@@ -335,11 +366,8 @@ function fmtSize(b) {
 }
 function fmtCount(n) { return new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(n); }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-function imgLink(url, name) { return `/api/media?u=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`; }
+function mediaLink(url, name) { return `/api/media?u=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`; }
 function fileBase(s) { return String(s || 'arquivo').replace(/\s+/g, ' ').trim().slice(0, 80); }
-
-$('#sites').innerHTML = ['YouTube', 'X / Twitter', 'Instagram', 'Bluesky', 'Facebook', 'SoundCloud', 'Twitch', 'Streamable', 'e mais']
-  .map((s) => `<span>${s}</span>`).join('');
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
@@ -347,6 +375,9 @@ async function api(path, opts = {}) {
   if (!r.ok) throw new Error(j.error || `Erro ${r.status}`);
   return j;
 }
+
+$('#sites').innerHTML = PLATFORMS.map((p) => `<span class="pill" data-name="${p.name}" style="--c:${p.color}"><i></i>${p.label || p.name}</span>`).join('')
+  + '<span class="pill">e mais</span>';
 
 // ---------- tema ----------
 function isDark() {
@@ -373,20 +404,22 @@ async function lookup(url) {
   if (!url || url === state.url) return;
   const my = ++seq;
   state.url = url;
+  const p = platformOfUrl(url);
+  setPlatform(p);
   $('#formErr').hidden = true;
-  $('#video').hidden = true;
-  $('#channel').hidden = true;
+  $('#post').hidden = true;
+  $('#profile').hidden = true;
+  $('#loadingText').textContent = p ? `Buscando no ${p.name}…` : 'Buscando…';
   $('#loading').hidden = false;
   try {
     const info = await api('/api/info', { method: 'POST', body: JSON.stringify({ url }) });
     if (my !== seq) return;
     state.info = info;
-    if (info.type === 'profile') renderChannel();
+    setPlatform(platformByName(info.platform) || p);
+    if (info.type === 'profile') renderProfile();
     else {
-      state.quality.mp4 = info.heights.includes(1080) ? 1080 : info.heights[0];
-      if (!info.heights.length) state.kind = 'mp3';
-      else if (!info.hasAudio) state.kind = 'mp4';
-      renderVideo();
+      const first = info.items.findIndex((it) => it.kind !== 'image');
+      selectItem(first >= 0 ? first : 0);
     }
   } catch (e) {
     if (my !== seq) return;
@@ -401,6 +434,7 @@ async function lookup(url) {
 $('#form').addEventListener('submit', (e) => { e.preventDefault(); lookup($('#url').value); });
 $('#url').addEventListener('paste', () => setTimeout(() => lookup($('#url').value), 0));
 $('#url').addEventListener('change', () => lookup($('#url').value));
+$('#url').addEventListener('input', () => setPlatform(platformOfUrl($('#url').value)));
 $('#paste').addEventListener('click', async () => {
   try {
     const t = await navigator.clipboard.readText();
@@ -409,120 +443,215 @@ $('#paste').addEventListener('click', async () => {
   } catch { $('#url').focus(); }
 });
 
-// ---------- vídeo ----------
-function renderVideo() {
-  const i = state.info;
-  const cover = i.thumbnail || i.media?.[0]?.thumb || '';
-  $('#vThumb').src = cover;
-  $('#vThumb').hidden = !cover;
-  $('#vDur').textContent = fmtDur(i.duration);
-  $('#vDur').hidden = !i.duration;
-  $('#vTitle').textContent = i.title || `Post de ${i.uploader}`;
-  $('#vMeta').textContent = [i.platform, i.uploader].filter(Boolean).join(' · ');
-  $('#convert').hidden = !i.convertible;
-  const avail = { mp4: i.heights.length > 0, mp3: i.hasAudio, wav: i.hasAudio };
-  document.querySelectorAll('.tabs .k').forEach((b) => {
-    b.hidden = !avail[b.dataset.kind];
-    b.setAttribute('aria-selected', b.dataset.kind === state.kind);
-  });
-  document.querySelector('.tabs').style.gridTemplateColumns = `repeat(${Object.values(avail).filter(Boolean).length || 1}, minmax(0, 1fr))`;
+// ---------- post ----------
+const KIND_NAME = { image: 'Foto', video: 'Vídeo', audio: 'Áudio' };
+const cur = () => state.info.items[state.sel];
+const nameFor = (i, n) => fileBase(`${i.uploader || i.platform} - ${i.id || 'post'}${i.items.length > 1 ? ` - ${n + 1}` : ''}`);
 
-  const media = i.media || [];
-  const base = fileBase(`${i.uploader || i.platform} - ${i.id || 'post'}`);
-  $('#mediaWrap').hidden = media.length === 0;
-  $('#mediaLabel').textContent = media.some((m) => m.kind === 'video') ? 'Mídia do post' : media.length > 1 ? `Fotos do post (${media.length})` : 'Foto do post';
-  $('#media').innerHTML = media.map((m, n) => `
-    <a class="tile" href="${esc(imgLink(m.url, `${base} - ${n + 1}`))}" download>
-      <div class="pic">${m.thumb ? `<img src="${esc(m.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}${m.width ? `<span class="tag">${m.kind === 'video' ? 'vídeo · ' : ''}${m.width}×${m.height}</span>` : ''}</div>
-      <span class="k">${svg('dl', 15)}Baixar ${m.kind === 'video' ? 'vídeo' : 'foto'}</span>
-    </a>`).join('');
+function selectItem(n) {
+  state.sel = n;
+  state.variant = 0;
+  const it = cur();
+  if (it.kind === 'audio') state.kind = 'mp3';
+  else if (it.kind === 'video') {
+    if (!it.native || !it.hasAudio) state.kind = 'mp4';
+    if (it.native && it.heights?.length) state.quality.mp4 = it.heights.includes(1080) ? 1080 : it.heights[0];
+  }
+  renderPost();
+}
+
+function itemTag(it) {
+  const bits = [it.gif ? 'GIF' : KIND_NAME[it.kind]];
+  if (it.duration) bits.push(fmtDur(it.duration));
+  else if (it.width && it.height) bits.push(`${it.width}×${it.height}`);
+  return bits.join(' · ');
+}
+
+function renderPost() {
+  const i = state.info;
+  const it = cur();
+  const multi = i.items.length > 1;
+
+  // Cabeçalho
+  const cover = it.thumb || i.thumbnail || '';
+  $('#pCover').src = cover;
+  $('#pCover').hidden = !cover;
+  $('#pDur').textContent = fmtDur(it.duration || i.duration);
+  $('#pDur').hidden = !(it.duration || i.duration);
+  $('#pTitle').textContent = i.title || `Post de ${i.uploader}`;
+  const base = nameFor(i, state.sel);
+  $('#pWho').innerHTML = [
+    i.avatar ? `<img src="${esc(i.avatar)}" alt="" referrerpolicy="no-referrer">` : '',
+    `<span>${esc([i.platform, i.uploader].filter(Boolean).join(' · '))}</span>`,
+    i.avatar ? `<a class="k" href="${esc(mediaLink(i.avatar, `${fileBase(i.uploader || i.platform)} - foto de perfil`))}" download>Baixar foto de perfil</a>` : '',
+  ].join('');
+
+  // Galeria (post com vários itens ou com foto)
+  const showGallery = multi || it.kind === 'image';
+  $('#gallerySec').hidden = !showGallery;
+  if (showGallery) {
+    const photos = i.items.filter((x) => x.kind === 'image').length;
+        const count = (k, one, many) => { const c = i.items.filter((x) => x.kind === k).length; return c ? `${c} ${c > 1 ? many : one}` : ''; };
+    const parts = [count('image', 'foto', 'fotos'), count('video', 'vídeo', 'vídeos'), count('audio', 'áudio', 'áudios')].filter(Boolean);
+    $('#galleryLabel').textContent = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} e ${parts.at(-1)}` : parts[0];
+    $('#allPhotos').hidden = photos < 2;
+    $('#allPhotos').innerHTML = `${svg('dl', 14)}Baixar ${photos} fotos`;
+    $('#gallery').innerHTML = i.items.map((x, n) => {
+      const pic = x.thumb ? `<img src="${esc(x.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : svg(x.kind === 'audio' ? 'music' : 'image', 30, 1.6);
+      const action = x.kind === 'image'
+        ? `<a class="k" href="${esc(mediaLink(x.url, nameFor(i, n)))}" download>${svg('dl', 15)}Baixar foto</a>`
+        : `<span class="k">${n === state.sel ? 'Selecionado' : 'Converter'}</span>`;
+      return `<div class="tile${n === state.sel && x.kind !== 'image' ? ' sel' : ''}" data-n="${n}" ${x.kind !== 'image' ? 'role="button" tabindex="0"' : ''} style="animation-delay:${n * 40}ms">
+        <div class="pic">${pic}${x.kind !== 'image' ? `<span class="play">${svg(x.kind === 'audio' ? 'music' : 'play', 16)}</span>` : ''}<span class="tag">${esc(itemTag(x))}</span></div>
+        ${action}
+      </div>`;
+    }).join('');
+  }
+
+  // Conversor do item selecionado
+  const canConvert = it.kind !== 'image';
+  $('#convert').hidden = !canConvert;
+  if (canConvert) renderConvert(it, base, multi);
+
+  // Capas (vídeo do YouTube e afins)
+  const thumbs = !multi && it.native ? (i.thumbs || []) : [];
+  $('#thumbsSec').hidden = thumbs.length === 0;
+  $('#thumbs').innerHTML = thumbs.map((t) =>
+    `<a class="k" href="${esc(mediaLink(t.url, `${fileBase(i.title)} - capa ${t.label}`))}" download>${esc(t.label)} <small>${esc(t.size)}</small></a>`).join('');
+
+  $('#post').hidden = false;
+}
+
+function renderConvert(it, base, multi) {
+  const avail = { mp4: it.kind === 'video', mp3: it.hasAudio, wav: it.hasAudio };
+  if (!avail[state.kind]) state.kind = Object.keys(avail).find((k) => avail[k]) || 'mp4';
+  $('#convertLabel').hidden = !multi;
+  $('#convertLabel').textContent = `Item ${state.sel + 1} de ${state.info.items.length}: ${KIND_NAME[it.kind].toLowerCase()}`;
+
+  const tabs = [['mp4', 'MP4', 'video'], ['mp3', 'MP3', 'music'], ['wav', 'WAV', 'wave']].filter(([k]) => avail[k]);
+  const tabEl = document.querySelector('.tabs');
+  tabEl.style.gridTemplateColumns = `repeat(${tabs.length}, minmax(0, 1fr))`;
+  tabEl.innerHTML = tabs.map(([k, label, ico]) =>
+    `<button class="k" type="button" role="tab" data-kind="${k}" aria-selected="${k === state.kind}">${svg(ico, 22, 2)}${label}</button>`).join('');
 
   const chips = $('#chips');
   const note = $('#note');
   note.hidden = true;
-  if (state.kind === 'mp4') {
+  let go = '';
+  if (state.kind === 'mp4' && it.native) {
     $('#qLabel').textContent = 'Resolução';
-    chips.innerHTML = i.heights.map((h) =>
-      `<button class="k" type="button" data-q="${h}" aria-pressed="${h === state.quality.mp4}">${h}p${RES_NAMES[h] ? ` <small>${RES_NAMES[h]}</small>` : ''}</button>`).join('');
+    chips.innerHTML = it.heights.map((h) =>
+      `<button class="k" type="button" data-q="${h}" aria-pressed="${h === state.quality.mp4}">${h ? `${h}p` : 'Melhor qualidade'}${RES_NAMES[h] ? ` <small>${RES_NAMES[h]}</small>` : ''}</button>`).join('');
     if (state.quality.mp4 > 1080) {
-      note.textContent = 'Acima de 1080p o YouTube só entrega VP9/AV1: toca no celular e no VLC, mas editores antigos podem não abrir.';
+      note.textContent = 'Acima de 1080p o vídeo vem em VP9/AV1: toca no celular e no VLC, mas editores antigos podem não abrir.';
       note.hidden = false;
     }
-    $('#goLabel').textContent = `Converter pra MP4 ${state.quality.mp4}p`;
+    go = `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}Converter pra MP4${state.quality.mp4 ? ` ${state.quality.mp4}p` : ''}</button>`;
+  } else if (state.kind === 'mp4') {
+    // Vídeo direto: já é MP4, só escolhe a versão e baixa.
+    const vs = it.variants?.length ? it.variants : [{ url: it.url }];
+    if (state.variant >= vs.length) state.variant = 0;
+    $('#qLabel').textContent = vs.length > 1 ? 'Versão' : 'Qualidade';
+    chips.innerHTML = vs.map((v, n) =>
+      `<button class="k" type="button" data-v="${n}" aria-pressed="${n === state.variant}">${esc(v.label || (v.height ? `${v.height}p` : 'Original'))}${n === 0 && vs.length > 1 ? ' <small>melhor</small>' : ''}</button>`).join('');
+    if (state.info.platform === 'TikTok') { note.textContent = 'Sem marca d\'água.'; note.hidden = false; }
+    go = `<a class="cta" href="${esc(mediaLink(vs[state.variant].url, base))}" download>${svg('dl', 20, 2.4)}Baixar MP4</a>`;
   } else if (state.kind === 'mp3') {
     $('#qLabel').textContent = 'Qualidade';
     chips.innerHTML = ['320', '256', '192', '128'].map((q) =>
       `<button class="k" type="button" data-q="${q}" aria-pressed="${q === state.quality.mp3}">${q} kbps</button>`).join('');
-    $('#goLabel').textContent = 'Converter pra MP3';
+    go = `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}Converter pra MP3</button>`;
+    if (it.kind === 'audio' && !it.native && it.url) {
+      go += `<a class="k" style="width:100%;margin-top:12px" href="${esc(mediaLink(it.url, base))}" download>Baixar o áudio original</a>`;
+    }
   } else {
     $('#qLabel').textContent = 'Qualidade';
     chips.innerHTML = '<button class="k" type="button" aria-pressed="true">Sem perda <small>PCM 16-bit</small></button>';
     note.textContent = 'WAV é pesado: uns 10 MB por minuto.';
     note.hidden = false;
-    $('#goLabel').textContent = 'Converter pra WAV';
+    go = `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}Converter pra WAV</button>`;
   }
-
-  const thumbs = i.thumbs || [];
-  $('#thumbsWrap').hidden = thumbs.length === 0;
-  $('#thumbs').innerHTML = thumbs.map((t) =>
-    `<a class="k" href="${esc(imgLink(t.url, `${fileBase(i.title)} - capa ${t.label}`))}" download>${esc(t.label)} <small>${esc(t.size)}</small></a>`).join('');
-
-  $('#video').hidden = false;
+  $('#goWrap').innerHTML = go;
 }
 
+$('#gallery').addEventListener('click', (e) => {
+  if (e.target.closest('a')) return;
+  const t = e.target.closest('.tile[role=button]');
+  if (t) selectItem(Number(t.dataset.n));
+});
+$('#gallery').addEventListener('keydown', (e) => {
+  const t = e.target.closest('.tile[role=button]');
+  if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectItem(Number(t.dataset.n)); }
+});
+$('#allPhotos').addEventListener('click', async () => {
+  const i = state.info;
+  for (const [n, x] of i.items.entries()) {
+    if (x.kind !== 'image') continue;
+    triggerDownload(mediaLink(x.url, nameFor(i, n)));
+    await new Promise((r) => setTimeout(r, 700));
+  }
+});
 document.querySelector('.tabs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-kind]');
   if (!b) return;
   state.kind = b.dataset.kind;
-  renderVideo();
+  renderPost();
 });
 $('#chips').addEventListener('click', (e) => {
+  const v = e.target.closest('[data-v]');
+  if (v) { state.variant = Number(v.dataset.v); return renderPost(); }
   const b = e.target.closest('[data-q]');
   if (!b) return;
   state.quality[state.kind] = state.kind === 'mp4' ? Number(b.dataset.q) : b.dataset.q;
-  renderVideo();
+  renderPost();
 });
 
-// ---------- canal ----------
-function renderChannel() {
+// ---------- perfil ----------
+function renderProfile() {
   const c = state.info;
-  $('#cName').textContent = c.title;
   const fans = c.platform === 'YouTube' ? 'inscritos' : 'seguidores';
+  $('#cName').textContent = c.title;
   $('#cMeta').textContent = [c.platform, c.handle, c.followers ? `${fmtCount(c.followers)} ${fans}` : ''].filter(Boolean).join(' · ');
+  $('#cBanner').className = `banner${c.banner ? '' : ' none'}`;
   $('#cBanner').innerHTML = c.banner ? `<img src="${esc(c.banner)}" alt="" referrerpolicy="no-referrer">` : '';
   $('#cAvatar').innerHTML = c.avatar ? `<img src="${esc(c.avatar)}" alt="" referrerpolicy="no-referrer">` : '<span></span>';
+  const who = fileBase(c.handle || c.title);
   const av = $('#cAvatarBtn'), bn = $('#cBannerBtn');
   av.hidden = !c.avatar;
   bn.hidden = !c.banner;
-  if (c.avatar) av.href = imgLink(c.avatar, `${c.title} - avatar`);
-  if (c.banner) bn.href = imgLink(c.banner, `${c.title} - banner`);
-  $('#channel').hidden = false;
+  if (c.avatar) av.href = mediaLink(c.avatar, `${who} - foto de perfil`);
+  if (c.banner) bn.href = mediaLink(c.banner, `${who} - banner`);
+  $('#profile').hidden = false;
 }
 
 // ---------- conversões ----------
-$('#go').addEventListener('click', async () => {
-  const btn = $('#go');
+$('#goWrap').addEventListener('click', async (e) => {
+  const btn = e.target.closest('#go');
+  if (!btn) return;
   btn.disabled = true;
+  const i = state.info;
+  const it = cur();
+  const title = fileBase(i.items.length > 1 ? `${i.title} (${state.sel + 1})` : i.title);
   try {
     const job = await api('/api/jobs', {
       method: 'POST',
-      body: JSON.stringify({ url: state.url, kind: state.kind, quality: state.quality[state.kind], title: state.info.title }),
+      body: JSON.stringify({ url: state.url, item: state.sel, kind: state.kind, quality: state.quality[state.kind], title }),
     });
+    job.platform = i.platform;
     state.jobs.unshift(job);
     saveJobs();
     renderJobs();
     poll();
-  } catch (e) {
-    alert(e.message);
+  } catch (err) {
+    alert(err.message);
   } finally {
     btn.disabled = false;
   }
 });
 
 function jobLabel(j) {
-  if (j.kind === 'mp4') return `MP4 ${j.quality}p`;
-  if (j.kind === 'mp3') return `MP3 ${j.quality}`;
-  return 'WAV';
+  const k = j.kind === 'mp4' ? (j.quality ? `MP4 ${j.quality}p` : 'MP4') : j.kind === 'mp3' ? `MP3 ${j.quality}` : 'WAV';
+  return j.platform ? `${j.platform} · ${k}` : k;
 }
 
 function saveJobs() {
@@ -585,7 +714,7 @@ async function poll() {
         const fresh = !j.recheck;
         Object.assign(j, upd);
         delete j.recheck;
-        if (fresh && !wasDone && j.status === 'done') autoDownload(j);
+        if (fresh && !wasDone && j.status === 'done') triggerDownload(`/api/jobs/${j.id}/file`);
       } catch {
         j.status = 'expired';
         delete j.recheck;
@@ -598,9 +727,9 @@ async function poll() {
   polling = false;
 }
 
-function autoDownload(j) {
+function triggerDownload(href) {
   const a = document.createElement('a');
-  a.href = `/api/jobs/${j.id}/file`;
+  a.href = href;
   a.download = '';
   document.body.appendChild(a);
   a.click();
@@ -612,7 +741,7 @@ state.jobs = load('gc-jobs', []).map((j) => ({ ...j, recheck: true }));
 renderJobs();
 if (state.jobs.length) poll();
 
-// Aceita ?url=... (e o "Compartilhar" do Android quando instalado como app)
+// Aceita ?url=... (e o "Compartilhar" do celular quando instalado como app)
 const qs = new URLSearchParams(location.search);
 const shared = (qs.get('url') || qs.get('text') || '').match(/https?:\/\/\S+/);
 if (shared) { $('#url').value = shared[0]; lookup(shared[0]); history.replaceState(null, '', '/'); }

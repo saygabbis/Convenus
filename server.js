@@ -40,11 +40,11 @@ const MEDIA_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 const YT_HOSTS = /^(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com)$/i;
 // Outras plataformas (o yt-dlp suporta todas). Lista fechada pra não virar proxy aberto.
 const OTHER_HOSTS = [
-  'twitter.com', 'x.com', 'instagram.com', 'reddit.com', 'redd.it', 'tiktok.com', 'facebook.com', 'fb.watch',
+  'twitter.com', 'x.com', 'fxtwitter.com', 'vxtwitter.com', 'fixupx.com', 'fixvx.com', 'instagram.com', 'reddit.com', 'redd.it', 'tiktok.com', 'facebook.com', 'fb.watch',
   'vimeo.com', 'twitch.tv', 'soundcloud.com', 'pinterest.com', 'pin.it', 'bsky.app', 'threads.net', 'threads.com',
   'dailymotion.com', 'dai.ly', 'kick.com', 'bilibili.com', 'b23.tv', 'streamable.com', 'tumblr.com', 'bandcamp.com',
 ];
-const PLATFORM_NAMES = { 'x.com': 'X', 'twitter.com': 'X', 'redd.it': 'Reddit', 'fb.watch': 'Facebook', 'pin.it': 'Pinterest', 'dai.ly': 'Dailymotion', 'b23.tv': 'Bilibili', 'bsky.app': 'Bluesky', 'threads.com': 'Threads', 'tiktok.com': 'TikTok', 'soundcloud.com': 'SoundCloud', 'twitch.tv': 'Twitch', 'bilibili.com': 'Bilibili' };
+const PLATFORM_NAMES = { 'x.com': 'X', 'twitter.com': 'X', 'fxtwitter.com': 'X', 'vxtwitter.com': 'X', 'fixupx.com': 'X', 'fixvx.com': 'X', 'redd.it': 'Reddit', 'fb.watch': 'Facebook', 'pin.it': 'Pinterest', 'dai.ly': 'Dailymotion', 'b23.tv': 'Bilibili', 'bsky.app': 'Bluesky', 'threads.com': 'Threads', 'tiktok.com': 'TikTok', 'soundcloud.com': 'SoundCloud', 'twitch.tv': 'Twitch', 'bilibili.com': 'Bilibili' };
 const hostIn = (host, list) => list.some((d) => host === d || host.endsWith(`.${d}`));
 
 const jobs = new Map();
@@ -183,58 +183,72 @@ async function getInfo(url) {
   return info;
 }
 
+// yt-dlp -J → um item "nativo" por vídeo/áudio (playlist = vários, com o índice pro --playlist-items).
+async function ytdlpItems(url) {
+  const j = JSON.parse(await runCapture([...baseArgs(url), '-J', '--', url]));
+  const entries = j._type === 'playlist' && Array.isArray(j.entries) ? j.entries.filter(Boolean) : [j];
+  if (!entries.length) throw new Error('Não achei nenhum vídeo nesse link.');
+  const items = entries.map((e, i) => {
+    const formats = e.formats || [];
+    const heights = [...new Set(formats.filter((f) => f.vcodec && f.vcodec !== 'none' && f.height).map((f) => f.height))].sort((a, b) => b - a);
+    // Alguns sites (Facebook…) não dizem codec nem altura: é vídeo, só sem resoluções conhecidas (0 = melhor).
+    const videoish = heights.length > 0 || formats.some((f) => f.vcodec !== 'none' && /^(mp4|webm|mov|mkv|flv|m3u8)$/.test(f.ext || ''));
+    return {
+      kind: videoish ? 'video' : 'audio',
+      native: true,
+      index: entries.length > 1 ? i + 1 : null,
+      heights: heights.length ? heights : videoish ? [0] : [],
+      // Sem acodec informado (X, Bluesky…) assume que tem som.
+      hasAudio: formats.length === 0 || formats.some((f) => f.acodec !== 'none'),
+      thumb: e.thumbnail || null,
+      duration: e.duration || 0,
+      width: e.width || 0,
+      height: e.height || 0,
+      isLive: Boolean(e.is_live),
+    };
+  });
+  const first = entries[0];
+  return {
+    id: j.id || first.id,
+    title: j.title || first.title || '',
+    uploader: first.uploader || first.channel || first.uploader_id || j.uploader || '',
+    thumbnail: first.thumbnail || j.thumbnail || null,
+    duration: first.duration || 0,
+    items,
+    thumbs: isYouTube(url) ? await thumbOptions(first.id) : bestThumb(first),
+  };
+}
+
 async function resolveInfo(url) {
   if (isChannelUrl(url)) return getChannel(url);
 
   const extra = providers.match(url);
   if (extra?.profile) return { type: 'profile', platform: extra.platform, ...(await extra.profile()) };
 
-  // yt-dlp (vídeo/áudio) e a API da plataforma (fotos) em paralelo; vale o que responder.
-  const [yd, ex] = await Promise.allSettled([
-    runCapture([...baseArgs(url), '-J', '--', url]).then((raw) => JSON.parse(raw)),
-    extra?.post ? extra.post() : Promise.resolve(null),
-  ]);
-  const post = ex.status === 'fulfilled' ? ex.value : null;
-  if (yd.status === 'rejected' && !post?.media?.length) throw yd.reason;
+  const base = { type: 'post', platform: extra?.platform || platformOf(url), avatar: null, thumbs: [], duration: 0 };
 
-  const info = {
-    type: 'post',
-    platform: platformOf(url),
-    title: post?.title || '',
-    uploader: post?.uploader || '',
-    duration: 0,
-    thumbnail: post?.thumbnail || null,
-    isLive: false,
-    convertible: false,
-    heights: [],
-    hasAudio: false,
-    thumbs: [],
-    media: [],
-  };
-
-  if (yd.status === 'fulfilled') {
-    let j = yd.value;
-    // Post com vários vídeos (ex.: tweet): o yt-dlp devolve playlist; usa o primeiro.
-    if (j._type === 'playlist' && Array.isArray(j.entries) && j.entries.length) j = { ...j.entries[0], title: j.entries[0].title || j.title };
-    const formats = j.formats || [];
-    Object.assign(info, {
-      id: j.id,
-      title: j.title || info.title,
-      uploader: j.uploader || j.channel || j.uploader_id || info.uploader,
-      duration: j.duration || 0,
-      thumbnail: j.thumbnail || info.thumbnail || (isYouTube(url) ? `https://i.ytimg.com/vi/${j.id}/hqdefault.jpg` : null),
-      isLive: Boolean(j.is_live),
-      convertible: true,
-      heights: [...new Set(formats.filter((f) => f.vcodec && f.vcodec !== 'none' && f.height).map((f) => f.height))].sort((a, b) => b - a),
-      // Sem acodec informado (X, Bluesky…) assume que tem som.
-      hasAudio: formats.length === 0 || formats.some((f) => f.acodec !== 'none'),
-      thumbs: isYouTube(url) ? await thumbOptions(j.id) : bestThumb(j),
-    });
+  // A API da plataforma manda: traz fotos, todos os vídeos e o arquivo original.
+  if (extra?.post) {
+    let post = null;
+    try {
+      post = await extra.post();
+    } catch (e) {
+      if (extra.platform === 'X') throw new Error(`Não consegui abrir esse post do X (${e.message}).`);
+    }
+    if (post && !post.items.length) throw new Error('Esse post não tem foto nem vídeo.');
+    if (post) {
+      // Item que só o yt-dlp baixa (ex.: vídeo HLS do Bluesky): completa com as resoluções.
+      if (post.items.some((it) => it.native)) {
+        const yd = await ytdlpItems(url).catch(() => null);
+        post.items = post.items.flatMap((it) => (it.native ? (yd ? [{ ...yd.items[0], thumb: it.thumb || yd.items[0].thumb }] : []) : [it]));
+        if (!post.items.length) throw new Error('Não consegui baixar o vídeo desse post.');
+      }
+      return { ...base, ...post, items: post.items.map((it) => ({ hasAudio: it.kind !== 'image' && !it.gif, ...it })) };
+    }
+    // Sem a API (fora do ar, post privado…): tenta pelo yt-dlp.
   }
 
-  // Fotos sempre; vídeo direto só quando o yt-dlp não conseguiu converter.
-  if (post?.media) info.media = post.media.filter((m) => m.kind === 'image' || !info.convertible);
-  return info;
+  return { ...base, ...(await ytdlpItems(url)) };
 }
 
 function jobArgs(job) {
@@ -250,10 +264,10 @@ function jobArgs(job) {
 
   if (job.kind === 'mp4') {
     const h = job.quality;
-    // Prefere H.264/AAC (toca em tudo); acima de 1080p o YouTube só tem VP9/AV1.
+    // Prefere H.264/AAC (toca em tudo); acima de 1080p o YouTube só tem VP9/AV1. 0 = a melhor que tiver.
     args.push(
-      '-f', `bv*[height<=${h}]+ba/b[height<=${h}]/bv*+ba/b`,
-      '-S', `res:${h},vcodec:h264,acodec:m4a`,
+      '-f', h ? `bv*[height<=${h}]+ba/b[height<=${h}]/bv*+ba/b` : 'bv*+ba/b',
+      '-S', h ? `res:${h},vcodec:h264,acodec:m4a` : 'vcodec:h264,acodec:m4a',
       '--merge-output-format', 'mp4',
       '--embed-metadata',
     );
@@ -264,6 +278,7 @@ function jobArgs(job) {
     args.push('-f', 'ba/b', '-x', '--audio-format', 'wav');
   }
 
+  if (job.index) args.push('--playlist-items', String(job.index));
   args.push('--', job.url);
   return args;
 }
@@ -291,11 +306,57 @@ function pump() {
   while (running < MAX_RUNNING && queue.length) startJob(queue.shift());
 }
 
+function finishJob(job, code, stderr) {
+  running--;
+  job.proc = null;
+  if (job.status === 'canceled') {
+    fs.rmSync(job.dir, { recursive: true, force: true });
+  } else if (code === 0 && job.file && fs.existsSync(job.file)) {
+    job.status = 'done';
+    job.phase = 'Pronto';
+    job.percent = 100;
+    job.size = fs.statSync(job.file).size;
+  } else {
+    job.status = 'error';
+    job.error = friendlyError(stderr);
+    fs.rmSync(job.dir, { recursive: true, force: true });
+    console.error(`[job ${job.id}] falhou (code ${code}):\n${stderr.trim().split('\n').slice(-5).join('\n')}`);
+  }
+  job.finishedAt = Date.now();
+  pump();
+}
+
+// Vídeo/áudio direto (X, Instagram, TikTok…): o ffmpeg lê o arquivo original e converte o áudio.
+function startDirectJob(job) {
+  const ext = job.kind === 'mp3' ? 'mp3' : 'wav';
+  job.file = path.join(job.dir, `${safeName(job.title)}.${ext}`);
+  job.phase = `Convertendo pra ${ext.toUpperCase()}`;
+  const codec = job.kind === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', `${job.quality}k`] : ['-c:a', 'pcm_s16le'];
+  const p = spawn('ffmpeg', [
+    '-hide_banner', '-nostdin', '-y', '-user_agent', 'Convenus/1.0', '-i', job.url,
+    '-vn', '-map_metadata', '-1', '-metadata', `title=${job.title}`, ...codec,
+    '-progress', 'pipe:1', '-nostats', job.file,
+  ], { stdio: ['ignore', 'pipe', 'pipe'] });
+  job.proc = p;
+  let stderr = '';
+  p.stdout.on('data', (d) => {
+    const m = String(d).match(/out_time_us=(\d+)/g);
+    if (m && job.duration) job.percent = Math.min(99, (Number(m.pop().split('=')[1]) / 1e6 / job.duration) * 100);
+  });
+  p.stderr.on('data', (d) => {
+    stderr += d;
+    if (stderr.length > 20_000) stderr = stderr.slice(-20_000);
+  });
+  p.on('error', (e) => finishJob(job, 1, String(e)));
+  p.on('close', (code) => finishJob(job, code, stderr));
+}
+
 function startJob(job) {
   running++;
   job.status = 'running';
   job.phase = 'Baixando';
   fs.mkdirSync(job.dir, { recursive: true });
+  if (job.mode === 'direct') return startDirectJob(job);
 
   const p = spawn(YTDLP, jobArgs(job), { stdio: ['ignore', 'pipe', 'pipe'] });
   job.proc = p;
@@ -341,31 +402,13 @@ function startJob(job) {
     if (stderr.length > 20_000) stderr = stderr.slice(-20_000);
   });
 
-  p.on('close', (code) => {
-    running--;
-    job.proc = null;
-    if (job.status === 'canceled') {
-      fs.rmSync(job.dir, { recursive: true, force: true });
-    } else if (code === 0 && job.file && fs.existsSync(job.file)) {
-      job.status = 'done';
-      job.phase = 'Pronto';
-      job.percent = 100;
-      job.size = fs.statSync(job.file).size;
-    } else {
-      job.status = 'error';
-      job.error = friendlyError(stderr);
-      fs.rmSync(job.dir, { recursive: true, force: true });
-      console.error(`[job ${job.id}] falhou (code ${code}):\n${stderr.trim().split('\n').slice(-5).join('\n')}`);
-    }
-    job.finishedAt = Date.now();
-    pump();
-  });
+  p.on('close', (code) => finishJob(job, code, stderr));
 }
 
-function createJob({ url, kind, quality, title }) {
+function createJob({ mode = 'native', url, index = null, duration = 0, kind, quality, title }) {
   const id = crypto.randomBytes(8).toString('hex');
   const job = {
-    id, url, kind, quality, title: String(title || '').slice(0, 300),
+    id, mode, url, index, duration, kind, quality, title: String(title || '').slice(0, 300),
     dir: path.join(DOWNLOAD_DIR, id),
     status: 'queued', phase: 'Na fila', percent: 0, lastPct: 0, speed: '', eta: '',
     error: null, file: null, size: 0, createdAt: Date.now(), finishedAt: 0, proc: null,
@@ -496,7 +539,7 @@ const server = http.createServer(async (req, res) => {
       if (!url) return sendJson(res, 400, { error: 'Esse site ainda não é suportado.' });
       try {
         const info = await getInfo(url);
-        if (info.isLive) return sendJson(res, 400, { error: 'Lives ao vivo não dá pra converter.' });
+        if (info.items?.some((it) => it.isLive)) return sendJson(res, 400, { error: 'Lives ao vivo não dá pra converter.' });
         return sendJson(res, 200, info);
       } catch (e) {
         return sendJson(res, 502, { error: e.message });
@@ -510,14 +553,28 @@ const server = http.createServer(async (req, res) => {
       if (isProfileUrl(url)) return sendJson(res, 400, { error: 'Link de perfil não tem vídeo pra converter.' });
       const kind = ['mp4', 'mp3', 'wav'].includes(body.kind) ? body.kind : null;
       if (!kind) return sendJson(res, 400, { error: 'Formato inválido.' });
+      // O item vem da busca que o servidor fez: nunca baixa um link arbitrário mandado pelo navegador.
+      let info;
+      try {
+        info = await getInfo(url);
+      } catch (e) {
+        return sendJson(res, 502, { error: e.message });
+      }
+      const idx = Number.isInteger(body.item) ? body.item : 0;
+      const item = info.items?.[idx];
+      if (!item || item.kind === 'image') return sendJson(res, 400, { error: 'Esse item não dá pra converter.' });
+      if (kind === 'mp4' && !item.native) return sendJson(res, 400, { error: 'Esse vídeo já vem em MP4: é só baixar.' });
       let quality = null;
       if (kind === 'mp4') {
         quality = parseInt(body.quality, 10);
-        if (!(quality >= 100 && quality <= 4320)) return sendJson(res, 400, { error: 'Qualidade inválida.' });
+        if (!(quality === 0 || (quality >= 100 && quality <= 4320))) return sendJson(res, 400, { error: 'Qualidade inválida.' });
       } else if (kind === 'mp3') {
         quality = MP3_BITRATES.includes(String(body.quality)) ? String(body.quality) : '320';
       }
-      return sendJson(res, 201, publicJob(createJob({ url, kind, quality, title: body.title })));
+      const title = String(body.title || info.title || 'arquivo');
+      return sendJson(res, 201, publicJob(createJob(item.native
+        ? { mode: 'native', url, index: item.index, kind, quality, title }
+        : { mode: 'direct', url: item.url, duration: item.duration, kind, quality, title })));
     }
 
     const m = pathname.match(/^\/api\/jobs\/([0-9a-f]{16})(\/file)?$/);
