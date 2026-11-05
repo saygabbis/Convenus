@@ -35,6 +35,7 @@ const MEDIA_HOSTS = [
   'ytimg.com', 'ggpht.com', 'googleusercontent.com', 'twimg.com', 'cdninstagram.com', 'fbcdn.net', 'redd.it',
   'redditmedia.com', 'tiktokcdn.com', 'tiktokcdn-us.com', 'tiktokcdn-eu.com', 'ibyteimg.com', 'muscdn.com', 'vimeocdn.com',
   'sndcdn.com', 'pinimg.com', 'bsky.app', 'jtvnw.net', 'dmcdn.net', 'hdslb.com', 'tumblr.com', 'bcbits.com',
+  'scdn.co', 'spotifycdn.com', 'dzcdn.net', 'mzstatic.com', 'vimeo.com',
 ];
 const MEDIA_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 const YT_HOSTS = /^(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com)$/i;
@@ -43,8 +44,9 @@ const OTHER_HOSTS = [
   'twitter.com', 'x.com', 'fxtwitter.com', 'vxtwitter.com', 'fixupx.com', 'fixvx.com', 'instagram.com', 'reddit.com', 'redd.it', 'tiktok.com', 'facebook.com', 'fb.watch',
   'vimeo.com', 'twitch.tv', 'soundcloud.com', 'pinterest.com', 'pin.it', 'bsky.app', 'threads.net', 'threads.com',
   'dailymotion.com', 'dai.ly', 'kick.com', 'bilibili.com', 'b23.tv', 'streamable.com', 'tumblr.com', 'bandcamp.com',
+  'open.spotify.com', 'deezer.com', 'music.apple.com',
 ];
-const PLATFORM_NAMES = { 'x.com': 'X', 'twitter.com': 'X', 'fxtwitter.com': 'X', 'vxtwitter.com': 'X', 'fixupx.com': 'X', 'fixvx.com': 'X', 'redd.it': 'Reddit', 'fb.watch': 'Facebook', 'pin.it': 'Pinterest', 'dai.ly': 'Dailymotion', 'b23.tv': 'Bilibili', 'bsky.app': 'Bluesky', 'threads.com': 'Threads', 'tiktok.com': 'TikTok', 'soundcloud.com': 'SoundCloud', 'twitch.tv': 'Twitch', 'bilibili.com': 'Bilibili' };
+const PLATFORM_NAMES = { 'x.com': 'X', 'twitter.com': 'X', 'fxtwitter.com': 'X', 'vxtwitter.com': 'X', 'fixupx.com': 'X', 'fixvx.com': 'X', 'redd.it': 'Reddit', 'fb.watch': 'Facebook', 'pin.it': 'Pinterest', 'dai.ly': 'Dailymotion', 'b23.tv': 'Bilibili', 'bsky.app': 'Bluesky', 'threads.com': 'Threads', 'tiktok.com': 'TikTok', 'soundcloud.com': 'SoundCloud', 'twitch.tv': 'Twitch', 'bilibili.com': 'Bilibili', 'open.spotify.com': 'Spotify', 'deezer.com': 'Deezer', 'music.apple.com': 'Apple Music' };
 const hostIn = (host, list) => list.some((d) => host === d || host.endsWith(`.${d}`));
 
 const jobs = new Map();
@@ -70,6 +72,7 @@ function ytLoggedIn() {
 
 function platformOf(url) {
   const host = new URL(url).hostname.replace(/^(www|m|mobile|old|vm|vt)\./, '');
+  if (/^music\.youtube\.com$/i.test(new URL(url).hostname)) return 'YouTube Music';
   if (YT_HOSTS.test(new URL(url).hostname)) return 'YouTube';
   const d = OTHER_HOSTS.find((x) => host === x || host.endsWith(`.${x}`));
   return PLATFORM_NAMES[d] || (d ? d.split('.')[0].replace(/^./, (c) => c.toUpperCase()) : 'Link');
@@ -265,7 +268,7 @@ function jobArgs(job) {
     '--print', 'after_move:@@F %(filepath)s',
     '--windows-filenames',
     '-P', job.dir,
-    '-o', '%(title).150B.%(ext)s',
+    '-o', job.mode === 'search' ? `${safeName(job.title)}.%(ext)s` : '%(title).150B.%(ext)s',
   ];
 
   if (job.kind === 'mp4') {
@@ -284,7 +287,8 @@ function jobArgs(job) {
     args.push('-f', 'ba/b', '-x', '--audio-format', 'wav');
   }
 
-  if (job.index) args.push('--playlist-items', String(job.index));
+  if (job.mode === 'search') args.push('--playlist-items', '1');
+  else if (job.index) args.push('--playlist-items', String(job.index));
   args.push('--', job.url);
   return args;
 }
@@ -334,13 +338,14 @@ function finishJob(job, code, stderr) {
 
 // Vídeo/áudio direto (X, Instagram, TikTok…): o ffmpeg lê o arquivo original e converte o áudio.
 function startDirectJob(job) {
-  const ext = job.kind === 'mp3' ? 'mp3' : 'wav';
+  const ext = job.kind;
   job.file = path.join(job.dir, `${safeName(job.title)}.${ext}`);
-  job.phase = `Convertendo pra ${ext.toUpperCase()}`;
-  const codec = job.kind === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', `${job.quality}k`] : ['-c:a', 'pcm_s16le'];
+  job.phase = ext === 'mp4' ? 'Baixando vídeo' : `Convertendo pra ${ext.toUpperCase()}`;
+  const codec = ext === 'mp4' ? ['-c', 'copy', '-bsf:a', 'aac_adtstoasc', '-movflags', '+faststart']
+    : ['-vn', ...(ext === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', `${job.quality}k`] : ['-c:a', 'pcm_s16le'])];
   const p = spawn('ffmpeg', [
     '-hide_banner', '-nostdin', '-y', '-user_agent', 'Convenus/1.0', '-i', job.url,
-    '-vn', '-map_metadata', '-1', '-metadata', `title=${job.title}`, ...codec,
+    '-map_metadata', '-1', '-metadata', `title=${job.title}`, ...codec,
     '-progress', 'pipe:1', '-nostats', job.file,
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
   job.proc = p;
@@ -569,18 +574,25 @@ const server = http.createServer(async (req, res) => {
       const idx = Number.isInteger(body.item) ? body.item : 0;
       const item = info.items?.[idx];
       if (!item || item.kind === 'image') return sendJson(res, 400, { error: 'Esse item não dá pra converter.' });
-      if (kind === 'mp4' && !item.native) return sendJson(res, 400, { error: 'Esse vídeo já vem em MP4: é só baixar.' });
+      if (kind === 'mp4' && !item.native && !item.hls) return sendJson(res, 400, { error: 'Esse vídeo já vem em MP4: é só baixar.' });
+      if (kind === 'mp4' && item.kind === 'audio') return sendJson(res, 400, { error: 'Isso é só áudio.' });
       let quality = null;
-      if (kind === 'mp4') {
+      if (kind === 'mp4' && !item.native) {
+        quality = 0; // HLS direto (Vimeo): uma versão só, copiada sem reencode
+      } else if (kind === 'mp4') {
         quality = parseInt(body.quality, 10);
         if (!(quality === 0 || (quality >= 100 && quality <= 4320))) return sendJson(res, 400, { error: 'Qualidade inválida.' });
       } else if (kind === 'mp3') {
         quality = MP3_BITRATES.includes(String(body.quality)) ? String(body.quality) : '320';
       }
       const title = String(body.title || info.title || 'arquivo');
-      return sendJson(res, 201, publicJob(createJob(item.native
-        ? { mode: 'native', url, index: item.index, kind, quality, title }
-        : { mode: 'direct', url: item.url, duration: item.duration, kind, quality, title })));
+      const spec = item.search
+        // Música (Spotify, Deezer, Apple Music): baixa a mesma faixa da aba de músicas do YouTube Music.
+        ? { mode: 'search', url: `https://music.youtube.com/search?q=${encodeURIComponent(item.search)}#songs`, kind, quality, title }
+        : item.native
+          ? { mode: 'native', url, index: item.index, kind, quality, title }
+          : { mode: 'direct', url: item.url, duration: item.duration, kind, quality, title };
+      return sendJson(res, 201, publicJob(createJob(spec)));
     }
 
     const m = pathname.match(/^\/api\/jobs\/([0-9a-f]{16})(\/file)?$/);

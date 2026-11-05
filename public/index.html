@@ -119,6 +119,11 @@
   .spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--fill); border-top-color: var(--pf); animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .sites { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 4px; font-size: 12px; }
+  @media (max-width: 640px) {
+    .sites { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 2px 16px; mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent); }
+    .sites::-webkit-scrollbar { display: none; }
+    .pill { flex: none; }
+  }
   .pill { display: inline-flex; align-items: center; gap: 6px; background: var(--fill); border-radius: 99px; padding: 3px 10px 3px 8px; font-size: 12px; color: var(--mut); transition: background .25s, color .25s; }
   .pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--mut)); flex: none; }
   .pill.on { background: color-mix(in srgb, var(--c) 16%, var(--fill)); color: var(--ink); }
@@ -153,6 +158,14 @@
   .tile .k { width: 100%; padding: 9px; font-size: 13px; }
   .tile.sel .k { background: var(--card); }
 
+  .tracks { display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow-y: auto; margin: 0 -6px; padding: 0 6px; }
+  .trk { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 14px; cursor: pointer; transition: background .2s; animation: rise .4s cubic-bezier(.22,1,.36,1) both; }
+  .trk:hover { background: var(--fill); }
+  .trk.sel { background: var(--ac-soft); }
+  .trk img, .trk .ph { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; flex: none; background: var(--fill); }
+  .trk .n { width: 22px; text-align: right; font-size: 12px; color: var(--mut); flex: none; }
+  .trk .t { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .trk .d { font-size: 12px; color: var(--mut); flex: none; }
   .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0 0 22px; }
   .tabs .k { flex-direction: column; gap: 6px; padding: 16px 6px; border-radius: 18px; font-size: 15px; }
   .label { font-size: 13px; margin: 0 0 12px; }
@@ -313,7 +326,11 @@ const ACTIVE = ['queued', 'running'];
 
 // Plataformas: nome, cor e como reconhecer pelo link.
 const PLATFORMS = [
+  { name: 'YouTube Music', color: '#ff0033', re: /^music\.youtube\.com$/ },
   { name: 'YouTube', color: '#ff3b30', re: /(^|\.)(youtube\.com|youtu\.be)$/ },
+  { name: 'Spotify', color: '#1db954', re: /^open\.spotify\.com$/ },
+  { name: 'Deezer', color: '#a238ff', re: /(^|\.)deezer\.com$/ },
+  { name: 'Apple Music', color: '#fa2d48', re: /^music\.apple\.com$/ },
   { name: 'X', label: 'X / Twitter', color: '#8b98a5', re: /(^|\.)(x\.com|twitter\.com|fxtwitter\.com|vxtwitter\.com|fixupx\.com)$/ },
   { name: 'Instagram', color: '#e1306c', re: /(^|\.)instagram\.com$/ },
   { name: 'TikTok', color: '#25c4c0', re: /(^|\.)tiktok\.com$/ },
@@ -323,6 +340,8 @@ const PLATFORMS = [
   { name: 'Twitch', color: '#9146ff', re: /(^|\.)twitch\.tv$/ },
   { name: 'Pinterest', color: '#e60023', re: /(^|\.)(pinterest\.[a-z.]+|pin\.it)$/ },
   { name: 'Streamable', color: '#0f90fa', re: /(^|\.)streamable\.com$/ },
+  { name: 'Vimeo', color: '#1ab7ea', re: /(^|\.)vimeo\.com$/ },
+  { name: 'Tumblr', color: '#5b7aa0', re: /(^|\.)tumblr\.com$/ },
 ];
 const platformByName = (n) => PLATFORMS.find((p) => p.name === n || p.label === n);
 function platformOfUrl(u) {
@@ -331,6 +350,7 @@ function platformOfUrl(u) {
 function setPlatform(p) {
   document.documentElement.style.setProperty('--pf', p?.color || 'var(--ac)');
   document.querySelectorAll('.pill').forEach((el) => el.classList.toggle('on', el.dataset.name === p?.name));
+  document.querySelector('.pill.on')?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
 }
 
 const ICONS = {
@@ -452,7 +472,7 @@ function selectItem(n) {
   state.sel = n;
   state.variant = 0;
   const it = cur();
-  if (it.kind === 'audio') state.kind = 'mp3';
+  if (it.kind === 'audio' || (state.info.platform === 'YouTube Music' && it.hasAudio)) state.kind = 'mp3';
   else if (it.kind === 'video') {
     if (!it.native || !it.hasAudio) state.kind = 'mp4';
     if (it.native && it.heights?.length) state.quality.mp4 = it.heights.includes(1080) ? 1080 : it.heights[0];
@@ -482,7 +502,7 @@ function renderPost() {
   const base = nameFor(i, state.sel);
   $('#pWho').innerHTML = [
     i.avatar ? `<img src="${esc(i.avatar)}" alt="" referrerpolicy="no-referrer">` : '',
-    `<span>${esc([i.platform, i.uploader].filter(Boolean).join(' · '))}</span>`,
+    `<span>${esc([...new Set([i.platform, i.uploader].filter(Boolean))].join(' · '))}</span>`,
     i.avatar ? `<a class="k" href="${esc(mediaLink(i.avatar, `${fileBase(i.uploader || i.platform)} - foto de perfil`))}" download>Baixar foto de perfil</a>` : '',
   ].join('');
 
@@ -494,9 +514,16 @@ function renderPost() {
         const count = (k, one, many) => { const c = i.items.filter((x) => x.kind === k).length; return c ? `${c} ${c > 1 ? many : one}` : ''; };
     const parts = [count('image', 'foto', 'fotos'), count('video', 'vídeo', 'vídeos'), count('audio', 'áudio', 'áudios')].filter(Boolean);
     $('#galleryLabel').textContent = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} e ${parts.at(-1)}` : parts[0];
-    $('#allPhotos').hidden = photos < 2;
-    $('#allPhotos').innerHTML = `${svg('dl', 14)}Baixar ${photos} fotos`;
-    $('#gallery').innerHTML = i.items.map((x, n) => {
+    const tracks = i.items.every((x) => x.kind === 'audio');
+    $('#allPhotos').hidden = !(photos > 1 || (tracks && i.items.length > 1));
+    $('#allPhotos').innerHTML = tracks ? `${svg('dl', 14)}Baixar todas em MP3` : `${svg('dl', 14)}Baixar ${photos} fotos`;
+    $('#gallery').className = tracks ? 'tracks' : 'gallery';
+    if (tracks) {
+      $('#galleryLabel').textContent = `${i.items.length} ${i.items.length > 1 ? 'faixas' : 'faixa'}`;
+      $('#gallery').innerHTML = i.items.map((x, n) => `<div class="trk${n === state.sel ? ' sel' : ''}" data-n="${n}" role="button" tabindex="0" style="animation-delay:${Math.min(n, 20) * 25}ms">
+        <span class="n">${n + 1}</span>${x.thumb ? `<img src="${esc(x.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="ph"></span>'}
+        <span class="t">${esc(x.label || `Faixa ${n + 1}`)}</span><span class="d">${x.duration ? fmtDur(x.duration) : ''}</span></div>`).join('');
+    } else $('#gallery').innerHTML = i.items.map((x, n) => {
       const pic = x.thumb ? `<img src="${esc(x.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : svg(x.kind === 'audio' ? 'music' : 'image', 30, 1.6);
       const action = x.kind === 'image'
         ? `<a class="k" href="${esc(mediaLink(x.url, nameFor(i, n)))}" download>${svg('dl', 15)}Baixar foto</a>`
@@ -507,6 +534,7 @@ function renderPost() {
       </div>`;
     }).join('');
   }
+  if (state.info.items.every((x) => x.kind === 'audio') && it.label) $('#pTitle').textContent = it.label;
 
   // Conversor do item selecionado
   const canConvert = it.kind !== 'image';
@@ -556,7 +584,9 @@ function renderConvert(it, base, multi) {
     chips.innerHTML = vs.map((v, n) =>
       `<button class="k" type="button" data-v="${n}" aria-pressed="${n === state.variant}">${esc(v.label || (v.height ? `${v.height}p` : 'Original'))}${n === 0 && vs.length > 1 ? ' <small>melhor</small>' : ''}</button>`).join('');
     if (state.info.platform === 'TikTok') { note.textContent = 'Sem marca d\'água.'; note.hidden = false; }
-    go = `<a class="cta" href="${esc(mediaLink(vs[state.variant].url, base))}" download>${svg('dl', 20, 2.4)}Baixar MP4</a>`;
+    go = it.hls
+      ? `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}Baixar MP4</button>`
+      : `<a class="cta" href="${esc(mediaLink(vs[state.variant].url, base))}" download>${svg('dl', 20, 2.4)}Baixar MP4</a>`;
   } else if (state.kind === 'mp3') {
     $('#qLabel').textContent = 'Qualidade';
     chips.innerHTML = ['320', '256', '192', '128'].map((q) =>
@@ -577,15 +607,16 @@ function renderConvert(it, base, multi) {
 
 $('#gallery').addEventListener('click', (e) => {
   if (e.target.closest('a')) return;
-  const t = e.target.closest('.tile[role=button]');
+  const t = e.target.closest('.tile[role=button], .trk');
   if (t) selectItem(Number(t.dataset.n));
 });
 $('#gallery').addEventListener('keydown', (e) => {
-  const t = e.target.closest('.tile[role=button]');
+  const t = e.target.closest('.tile[role=button], .trk');
   if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectItem(Number(t.dataset.n)); }
 });
 $('#allPhotos').addEventListener('click', async () => {
   const i = state.info;
+  if (i.items.every((x) => x.kind === 'audio')) return convertAll();
   for (const [n, x] of i.items.entries()) {
     if (x.kind !== 'image') continue;
     triggerDownload(mediaLink(x.url, nameFor(i, n)));
@@ -632,7 +663,7 @@ $('#goWrap').addEventListener('click', async (e) => {
   btn.disabled = true;
   const i = state.info;
   const it = cur();
-  const title = fileBase(i.items.length > 1 ? `${i.title} (${state.sel + 1})` : i.title);
+  const title = fileBase(it.label || (i.items.length > 1 ? `${i.title} (${state.sel + 1})` : i.title));
   try {
     const job = await api('/api/jobs', {
       method: 'POST',
@@ -649,6 +680,31 @@ $('#goWrap').addEventListener('click', async (e) => {
     btn.disabled = false;
   }
 });
+
+async function startJob(n, kind, quality) {
+  const i = state.info;
+  const it = i.items[n];
+  const title = fileBase(it.label || (i.items.length > 1 ? `${i.title} (${n + 1})` : i.title));
+  const job = await api('/api/jobs', { method: 'POST', body: JSON.stringify({ url: state.url, item: n, kind, quality, title }) });
+  job.platform = i.platform;
+  state.jobs.unshift(job);
+  saveJobs();
+  renderJobs();
+  poll();
+}
+
+async function convertAll() {
+  const btn = $('#allPhotos');
+  btn.disabled = true;
+  const n = Math.min(state.info.items.length, 100);
+  try {
+    for (let k = 0; k < n; k++) await startJob(k, 'mp3', state.quality.mp3);
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 function jobLabel(j) {
   const k = j.kind === 'mp4' ? (j.quality ? `MP4 ${j.quality}p` : 'MP4') : j.kind === 'mp3' ? `MP3 ${j.quality}` : 'WAV';

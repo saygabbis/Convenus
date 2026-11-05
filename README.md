@@ -1,13 +1,13 @@
 # Convenus
 
-YouTube, X/Twitter, Instagram, Bluesky, Facebook, SoundCloud, Twitch e outros sites que o yt-dlp suporta → **MP4** (até 4K), **MP3** (128–320 kbps) e **WAV**, além de **fotos de posts**, **capas**, **avatares** e **banners**. Sem propaganda, sem pop-up.
+YouTube, YouTube Music, Spotify, Deezer, Apple Music, X/Twitter, Instagram, TikTok, Bluesky, Facebook, SoundCloud, Twitch, Vimeo, Pinterest, Tumblr e outros sites que o yt-dlp suporta → **MP4** (até 4K), **MP3** (128–320 kbps) e **WAV**, além de **fotos de posts**, **capas**, **avatares** e **banners**. Sem propaganda, sem pop-up.
 
 Rodando em https://convert.saygabbis.cloud
 
 ## Como funciona
 
 - `server.js`: servidor Node sem dependências que chama o [yt-dlp](https://github.com/yt-dlp/yt-dlp) + ffmpeg, com fila (2 conversões por vez) e progresso.
-- `providers.js`: posts e perfis com o arquivo original — X (FxTwitter), Bluesky (API oficial), Instagram (página de embed pública) e TikTok sem marca d'água (TikWM). Cada post vira uma lista de fotos/vídeos/áudio; vídeo direto é baixado na hora e MP3/WAV sai pelo ffmpeg.
+- `providers.js`: posts e perfis com o arquivo original, por APIs e páginas públicas: X (FxTwitter), Bluesky (API oficial), Instagram (embed), TikTok sem marca d'água (TikWM), Vimeo (config do player), Pinterest e Tumblr (metadados da página). Spotify, Deezer e Apple Music viram lista de faixas, e o áudio vem da mesma música no YouTube Music (o áudio deles tem DRM).
 - `public/`: a página (dá pra instalar como app no celular e usar o "Compartilhar" do YouTube).
 - Os arquivos convertidos são apagados depois de 1 hora.
 - O YouTube bloqueia IP de datacenter, então o yt-dlp sai pelo **Cloudflare WARP** (via `wireproxy`, um proxy SOCKS local que não mexe na rede do sistema) e usa o [bgutil PO token provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider).

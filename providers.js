@@ -172,6 +172,122 @@ async function ttPost(url) {
   };
 }
 
+// ---------- música (Spotify, Deezer, Apple Music → YouTube Music) ----------
+// O áudio desses serviços tem DRM; como os sites de "Spotify downloader", pega o nome
+// da faixa e baixa a mesma música do YouTube Music. Item: { kind: 'audio', search }.
+
+const track = (title, artist, extra = {}) => ({
+  kind: 'audio',
+  search: `${artist} ${title}`.trim(),
+  label: artist ? `${artist} — ${title}` : title,
+  ...extra,
+});
+
+function musicPost({ id, title, uploader, cover, tracks }) {
+  return { id, title: clean(title), uploader, avatar: null, thumbnail: cover, music: true, items: tracks };
+}
+
+async function spotify(type, id) {
+  const html = await get(`https://open.spotify.com/embed/${type}/${id}`, 'text');
+  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  const e = m && JSON.parse(m[1]).props?.pageProps?.state?.data?.entity;
+  if (!e) throw new Error('O Spotify não mostrou esse link.');
+  const cover = (e.visualIdentity?.image || e.coverArt?.sources || []).sort((a, b) => (b.maxWidth || b.width || 0) - (a.maxWidth || a.width || 0))[0]?.url || null;
+  const artists = (list) => (list || []).map((a) => a.name).join(', ');
+  const tracks = type === 'track'
+    ? [track(e.name, artists(e.artists), { thumb: cover, duration: (e.duration || 0) / 1000 })]
+    : (e.trackList || []).map((t) => track(t.title, t.subtitle, { thumb: cover, duration: (t.duration || 0) / 1000 }));
+  return musicPost({ id, title: type === 'track' ? `${artists(e.artists)} — ${e.name}` : e.name, uploader: e.subtitle || artists(e.artists), cover, tracks });
+}
+
+async function deezer(type, id) {
+  const d = await get(`https://api.deezer.com/${type}/${id}`);
+  if (d.error) throw new Error('O Deezer não achou esse link.');
+  const list = type === 'track' ? [d] : d.tracks?.data || [];
+  const cover = d.album?.cover_xl || d.cover_xl || d.picture_xl || null;
+  return musicPost({
+    id,
+    title: type === 'track' ? `${d.artist?.name} — ${d.title}` : d.title,
+    uploader: d.artist?.name || d.creator?.name || '',
+    cover,
+    tracks: list.map((t) => track(t.title, t.artist?.name, { thumb: t.album?.cover_xl || cover, duration: t.duration || 0 })),
+  });
+}
+
+async function appleMusic(albumId, trackId) {
+  const r = await get(`https://itunes.apple.com/lookup?id=${trackId || albumId}&entity=song&limit=200`);
+  const all = r.results || [];
+  const songs = all.filter((x) => x.wrapperType === 'track' && (!trackId || String(x.trackId) === String(trackId)));
+  if (!songs.length) throw new Error('A Apple Music não achou esse link.');
+  const head = all.find((x) => x.wrapperType === 'collection') || songs[0];
+  const big = (u) => (u ? u.replace(/\/\d+x\d+bb\./, '/1200x1200bb.') : null);
+  return musicPost({
+    id: trackId || albumId,
+    title: trackId ? `${songs[0].artistName} — ${songs[0].trackName}` : head.collectionName,
+    uploader: head.artistName,
+    cover: big(head.artworkUrl100),
+    tracks: songs.map((t) => track(t.trackName, t.artistName, { thumb: big(t.artworkUrl100), duration: (t.trackTimeMillis || 0) / 1000 })),
+  });
+}
+
+// ---------- Vimeo (config do player público) ----------
+
+async function vimeo(id) {
+  const c = await get(`https://player.vimeo.com/video/${id}/config`);
+  const v = c.video || {};
+  const hls = c.request?.files?.hls;
+  const cdn = hls?.cdns?.[hls.default_cdn];
+  if (!cdn) throw new Error('Esse vídeo do Vimeo é privado ou não deixa baixar.');
+  const thumb = v.thumbnail_url || (v.thumbs?.base ? `${v.thumbs.base}_1280` : Object.values(v.thumbs || {}).pop()) || null;
+  return {
+    id,
+    title: clean(v.title),
+    uploader: v.owner?.name || '',
+    avatar: v.owner?.img_2x || v.owner?.img || null,
+    thumbnail: thumb,
+    items: [{ kind: 'video', url: cdn.avc_url || cdn.url, hls: true, thumb, width: v.width || 0, height: v.height || 0, duration: v.duration || 0 }],
+  };
+}
+
+// ---------- Pinterest e Tumblr (metadados públicos da página) ----------
+
+function metaAll(html, prop) {
+  const re = new RegExp(`<meta[^>]+(?:property|name)=["']${prop}["'][^>]+content=["']([^"']+)["']`, 'gi');
+  return [...html.matchAll(re)].map((m) => m[1].replace(/&amp;/g, '&'));
+}
+
+async function pinterest(rawUrl) {
+  const html = await get(rawUrl, 'text');
+  const img = metaAll(html, 'og:image')[0];
+  if (!img) throw new Error('O Pinterest não mostrou esse pin.');
+  const orig = img.replace(/\/\d+x(\d+)?\//, '/originals/');
+  const isVideo = /"video_list"|v1\.pinimg\.com\/videos/.test(html);
+  return {
+    id: rawUrl.match(/\/pin\/(\d+)/)?.[1] || 'pin',
+    title: clean(metaAll(html, 'og:description')[0] || metaAll(html, 'og:title')[0] || 'Pin'),
+    uploader: '',
+    avatar: null,
+    thumbnail: img,
+    items: isVideo ? [{ kind: 'video', native: true, thumb: img }] : [{ kind: 'image', url: orig, thumb: img }],
+  };
+}
+
+async function tumblr(rawUrl) {
+  const html = await get(rawUrl, 'text');
+  const images = [...new Set(metaAll(html, 'og:image'))].filter((u) => /media\.tumblr\.com/.test(u));
+  const videos = [...new Set(html.match(/https:\/\/va\.media\.tumblr\.com\/[\w/.-]+\.mp4/g) || [])];
+  if (!images.length && !videos.length) throw new Error('Não achei foto nem vídeo nesse post do Tumblr.');
+  const thumb = images[0] || null;
+  return {
+    id: rawUrl.match(/\/post\/(\d+)/)?.[1] || 'post',
+    title: clean(metaAll(html, 'og:description')[0] || metaAll(html, 'og:title')[0] || 'Post do Tumblr'),
+    uploader: new URL(rawUrl).hostname.split('.')[0],
+    avatar: null,
+    thumbnail: thumb,
+    items: [...videos.map((v) => ({ kind: 'video', url: v, thumb })), ...images.map((i) => ({ kind: 'image', url: i, thumb: i }))],
+  };
+}
+
 // ---------- roteamento ----------
 
 /** { platform, post?, profile? } com a função que resolve o link, ou null se a plataforma não tiver API própria aqui. */
@@ -201,6 +317,26 @@ function match(rawUrl) {
   if (TT_HOST.test(u.hostname) && (/\/(video|photo)\/\d+/.test(u.pathname) || /^(vm|vt)\./i.test(u.hostname) || parts[0] === 't')) {
     return { platform: 'TikTok', post: () => ttPost(rawUrl) };
   }
+  if (/^open\.spotify\.com$/i.test(u.hostname)) {
+    const i = parts.findIndex((p) => ['track', 'album', 'playlist'].includes(p));
+    if (i >= 0 && parts[i + 1]) return { platform: 'Spotify', post: () => spotify(parts[i], parts[i + 1]) };
+  }
+  if (/(^|\.)deezer\.com$/i.test(u.hostname)) {
+    const i = parts.findIndex((p) => ['track', 'album', 'playlist'].includes(p));
+    if (i >= 0 && /^\d+$/.test(parts[i + 1] || '')) return { platform: 'Deezer', post: () => deezer(parts[i], parts[i + 1]) };
+  }
+  if (/^music\.apple\.com$/i.test(u.hostname)) {
+    const albumId = parts.at(-1)?.match(/^(?:id)?(\d+)$/)?.[1];
+    const trackId = u.searchParams.get('i');
+    if (albumId || trackId) return { platform: 'Apple Music', post: () => appleMusic(albumId, trackId) };
+  }
+  if (/(^|\.)vimeo\.com$/i.test(u.hostname)) {
+    const id = parts.find((p) => /^\d{5,}$/.test(p));
+    if (id) return { platform: 'Vimeo', post: () => vimeo(id) };
+  }
+  if (/(^|\.)pinterest\.[a-z.]+$/i.test(u.hostname) && parts[0] === 'pin') return { platform: 'Pinterest', post: () => pinterest(rawUrl) };
+  if (/(^|\.)tumblr\.com$/i.test(u.hostname) && /\/(post\/)?\d{6,}/.test(u.pathname)) return { platform: 'Tumblr', post: () => tumblr(rawUrl) };
+
   if (TT_HOST.test(u.hostname) && parts.length === 1 && parts[0].startsWith('@')) {
     return {
       platform: 'TikTok',
