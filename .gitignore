@@ -7,3 +7,4 @@ logs/
 cookies.txt
 *.cookies.txt
 cookies*.txt
+reddit.json
