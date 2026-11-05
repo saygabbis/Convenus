@@ -74,8 +74,6 @@
     </ol>
 
     <form id="form" autocomplete="off">
-      <label for="token">Código de acesso</label>
-      <input type="password" id="token" required autocomplete="current-password" placeholder="O código do arquivo admin.token">
       <label for="file">Arquivo de cookies</label>
       <label class="drop" id="drop">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 20h14"/></svg>
@@ -94,7 +92,9 @@ let file = null;
 
 async function status() {
   try {
-    const s = await (await fetch('/api/status')).json();
+    const r = await fetch('/api/status');
+    if (r.status === 401) return location.replace('/entrar?next=/renovar');
+    const s = await r.json();
     $('#dot').className = `dot ${s.youtube ? 'ok' : 'err'}`;
     $('#statusText').textContent = s.youtube ? 'O login do YouTube está funcionando.' : 'O login do YouTube caiu: manda cookies novos.';
   } catch {
@@ -126,8 +126,9 @@ $('#form').addEventListener('submit', async (e) => {
     const r = await fetch('/api/cookies', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: $('#token').value, content: await file.text() }),
+      body: JSON.stringify({ content: await file.text() }),
     });
+    if (r.status === 401) return location.replace('/entrar?next=/renovar');
     const j = await r.json().catch(() => ({}));
     const ok = r.ok && j.ok;
     msg.className = `msg ${ok ? 'ok' : 'err'}`;

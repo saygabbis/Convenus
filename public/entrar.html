@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Entrar · Convenus</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#e9edf2">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+  try { const t = localStorage.getItem('gc-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+</script>
+<style>
+  :root { --page: #e9edf2; --card: #f5f7fa; --fill: #e9edf2; --ink: #3b414d; --mut: #646b78; --ac: #f2734f; --cta: #c94a24; --cta-ink: #fff; --err: #b8382e;
+    --shadow: 0 1px 2px rgb(30 40 60 / .04), 0 12px 32px -18px rgb(30 40 60 / .18); color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --page: #1b1e25; --card: #23272f; --fill: #2c313b; --ink: #e7e9ee; --mut: #9ea5b2; --cta: #f2734f; --cta-ink: #1b1e25; --err: #ff8a80; color-scheme: dark; } }
+  :root[data-theme="dark"] { --page: #1b1e25; --card: #23272f; --fill: #2c313b; --ink: #e7e9ee; --mut: #9ea5b2; --cta: #f2734f; --cta-ink: #1b1e25; --err: #ff8a80; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--page); color: var(--ink); font: 15px/1.55 "Poppins", system-ui, sans-serif; min-height: 100dvh; display: grid; place-items: center; padding: 16px; }
+  .card { width: 100%; max-width: 400px; background: var(--card); border-radius: 26px; box-shadow: var(--shadow); padding: 28px 24px; animation: rise .6s cubic-bezier(.22,1,.36,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+  .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  .brand h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  .brand p { margin: 0; font-size: 13px; color: var(--mut); }
+  label { display: block; font-size: 13px; color: var(--mut); margin: 0 0 8px; }
+  input { width: 100%; font: inherit; color: var(--ink); background: var(--fill); border: 0; border-radius: 14px; padding: 14px 16px; outline: none; }
+  button { font: inherit; font-weight: 600; font-size: 16px; width: 100%; margin-top: 16px; padding: 15px; border: 0; border-radius: 18px; cursor: pointer; background: var(--cta); color: var(--cta-ink); transition: transform .3s cubic-bezier(.34,1.56,.64,1), opacity .2s; }
+  button:hover { transform: translateY(-2px); }
+  button:disabled { opacity: .6; transform: none; cursor: default; }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+  .msg { margin-top: 14px; padding: 12px 14px; border-radius: 14px; font-size: 14px; background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); }
+  .hint { margin: 16px 0 0; font-size: 12px; color: var(--mut); }
+  code { background: var(--fill); padding: 1px 6px; border-radius: 6px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<form class="card" id="form">
+  <div class="brand">
+    <svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="18" fill="#f2734f"/><path d="M11 34a21 21 0 0 1 42 0L32 53z" fill="#fff"/><path d="M32 53L17.5 21M32 53L24.5 15.5M32 53V13M32 53l7.5-37.5M32 53l14.5-32" fill="none" stroke="#f2734f" stroke-width="2.6" stroke-linecap="round"/></svg>
+    <div><h1>Convenus</h1><p>Acesso privado</p></div>
+  </div>
+  <label for="token">Código de acesso</label>
+  <input type="password" id="token" required autocomplete="current-password" autofocus>
+  <button type="submit" id="go">Entrar</button>
+  <div class="msg" id="msg" hidden></div>
+  <p class="hint">O código fica no arquivo <code>admin.token</code> da VPS. Você entra uma vez por aparelho.</p>
+</form>
+<script>
+const $ = (s) => document.querySelector(s);
+const next = new URLSearchParams(location.search).get('next') || '/';
+const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/';
+$('#form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('#go');
+  btn.disabled = true;
+  $('#msg').hidden = true;
+  try {
+    const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: $('#token').value }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) return location.replace(safeNext);
+    $('#msg').textContent = j.error || `Erro ${r.status}`;
+    $('#msg').hidden = false;
+  } catch {
+    $('#msg').textContent = 'Não consegui falar com o servidor.';
+    $('#msg').hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

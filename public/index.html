@@ -168,6 +168,13 @@
   .trk .n { width: 22px; text-align: right; font-size: 12px; color: var(--mut); flex: none; }
   .trk .t { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .trk .d { font-size: 12px; color: var(--mut); flex: none; }
+  .subs { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 18px; padding-top: 18px; border-top: 1px solid color-mix(in srgb, var(--mut) 18%, transparent); }
+  .subs label { font-size: 13px; color: var(--mut); }
+  .subs select { font: inherit; font-size: 14px; color: var(--ink); background: var(--fill); border: 0; border-radius: 12px; padding: 10px 12px; flex: 1 1 180px; min-width: 0; }
+  .subs .chk { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); cursor: pointer; }
+  .subs .chk input { width: 18px; height: 18px; accent-color: var(--ac); }
+  .subs .k { flex: 1 1 100%; }
+  .more { width: 100%; margin-top: 12px; }
   .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0 0 22px; }
   .tabs .k { flex-direction: column; gap: 6px; padding: 16px 6px; border-radius: 18px; font-size: 15px; }
   .label { font-size: 13px; margin: 0 0 12px; }
@@ -284,6 +291,7 @@
             <span class="btns"><button class="k" type="button" id="allVideos" hidden></button><button class="k" type="button" id="allPhotos" hidden></button></span>
           </div>
           <div class="gallery" id="gallery"></div>
+          <button class="k more" type="button" id="more" hidden></button>
         </div>
 
         <div class="sec" id="convert" hidden>
@@ -331,7 +339,7 @@
           Nada por aqui ainda.<br>Cola um link pra começar.
         </div>
       </section>
-      <footer class="mut">Os arquivos convertidos somem em 1 hora.</footer>
+      <footer class="mut">Os arquivos convertidos ficam disponíveis por 24 horas.</footer>
     </div>
   </div>
 </div>
@@ -409,10 +417,17 @@ function fileBase(s) { return String(s || 'arquivo').replace(/\s+/g, ' ').trim()
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
+  if (r.status === 401) {
+    location.href = `/entrar?next=${encodeURIComponent(location.pathname + location.search)}`;
+    throw new Error('Entra com o código de acesso primeiro.');
+  }
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `Erro ${r.status}`);
   return j;
 }
+
+// Item de playlist paginada: o servidor precisa da página e da posição dentro dela.
+const jobRef = (it, n) => (it.page != null ? { page: it.page, item: it.pidx } : { item: n });
 
 $('#sites').innerHTML = PLATFORMS.map((p) => `<span class="pill" data-name="${p.name}" style="--c:${p.color}"><i></i>${p.label || p.name}</span>`).join('')
   + '<span class="pill">e mais</span>';
@@ -437,7 +452,7 @@ paintTheme();
 
 // ---------- aviso do login do YouTube ----------
 async function checkYt() {
-  try { $('#ytAlert').hidden = (await (await fetch('/api/status')).json()).youtube; } catch {}
+  try { $('#ytAlert').hidden = (await api('/api/status')).youtube; } catch {}
 }
 checkYt();
 setInterval(checkYt, 5 * 60_000);
@@ -497,6 +512,7 @@ const nameFor = (i, n) => fileBase(`${i.uploader || i.platform} - ${i.id || 'pos
 function selectItem(n) {
   state.sel = n;
   state.variant = 0;
+  state.subLang = '';
   const it = cur();
   if (it.kind === 'audio' || (state.info.platform === 'YouTube Music' && it.hasAudio)) state.kind = 'mp3';
   else if (it.kind === 'video') {
@@ -566,6 +582,8 @@ function renderPost() {
     }).join('');
   }
   if (!i.playlist && i.items.every((x) => x.kind === 'audio') && it.label) $('#pTitle').textContent = it.label;
+  $('#more').hidden = !(i.playlist && i.hasMore);
+  $('#more').textContent = `Carregar mais (${i.items.length}${i.total > i.items.length ? ` de ${i.total}` : ''})`;
 
   // Conversor do item selecionado
   const canConvert = it.kind !== 'image';
@@ -635,7 +653,22 @@ function renderConvert(it, base, multi) {
     note.hidden = false;
     go = `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}Converter pra WAV</button>`;
   }
-  $('#goWrap').innerHTML = go;
+  $('#goWrap').innerHTML = go + subsBlock(it);
+}
+
+// Legendas: só pra itens que o yt-dlp baixa (YouTube e afins); os idiomas vêm da busca.
+function subsBlock(it) {
+  if (!it.native || it.search || it.kind !== 'video') return '';
+  if (it.page != null) return '<p class="note mut" style="margin:14px 0 0">Legendas: abre o vídeo sozinho (fora da playlist) pra ver os idiomas.</p>';
+  const subs = it.subs || [];
+  if (!subs.length) return '<p class="note mut" style="margin:14px 0 0">Esse vídeo não tem legendas.</p>';
+  const opts = subs.map((x) => `<option value="${esc(x.lang)}"${x.lang === state.subLang ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
+  return `<div class="subs">
+    <label for="subLang">Legenda</label>
+    <select id="subLang"><option value="">Sem legenda</option>${opts}</select>
+    ${state.kind === 'mp4' ? `<label class="chk"><input type="checkbox" id="subEmbed" ${state.subEmbed !== false ? 'checked' : ''}${state.subLang ? '' : ' disabled'}>Colocar dentro do MP4</label>` : ''}
+    <button class="k" type="button" id="subOnly"${state.subLang ? '' : ' disabled'}>Baixar só a legenda (.srt)</button>
+  </div>`;
 }
 
 $('#gallery').addEventListener('click', (e) => {
@@ -671,6 +704,11 @@ $('#chips').addEventListener('click', (e) => {
   renderPost();
 });
 
+$('#goWrap').addEventListener('change', (e) => {
+  if (e.target.id === 'subLang') { state.subLang = e.target.value; renderPost(); }
+  if (e.target.id === 'subEmbed') state.subEmbed = e.target.checked;
+});
+
 // ---------- perfil ----------
 function renderProfile() {
   const c = state.info;
@@ -691,16 +729,19 @@ function renderProfile() {
 
 // ---------- conversões ----------
 $('#goWrap').addEventListener('click', async (e) => {
-  const btn = e.target.closest('#go');
+  const btn = e.target.closest('#go, #subOnly');
   if (!btn) return;
   btn.disabled = true;
   const i = state.info;
   const it = cur();
   const title = fileBase(it.label || (i.items.length > 1 ? `${i.title} (${state.sel + 1})` : i.title));
+  const onlySubs = btn.id === 'subOnly';
+  const kind = onlySubs ? 'srt' : state.kind;
+  const subs = state.subLang && (onlySubs || kind === 'mp4') ? { lang: state.subLang, embed: state.subEmbed !== false } : undefined;
   try {
     const job = await api('/api/jobs', {
       method: 'POST',
-      body: JSON.stringify({ url: state.url, item: state.sel, kind: state.kind, quality: state.quality[state.kind], title }),
+      body: JSON.stringify({ url: state.url, ...jobRef(it, state.sel), kind, quality: state.quality[kind], title, subs }),
     });
     job.platform = i.platform;
     state.jobs.unshift(job);
@@ -718,7 +759,7 @@ async function startJob(n, kind, quality) {
   const i = state.info;
   const it = i.items[n];
   const title = fileBase(it.label || (i.items.length > 1 ? `${i.title} (${n + 1})` : i.title));
-  const job = await api('/api/jobs', { method: 'POST', body: JSON.stringify({ url: state.url, item: n, kind, quality, title }) });
+  const job = await api('/api/jobs', { method: 'POST', body: JSON.stringify({ url: state.url, ...jobRef(it, n), kind, quality, title }) });
   job.platform = i.platform;
   state.jobs.unshift(job);
   saveJobs();
@@ -727,6 +768,27 @@ async function startJob(n, kind, quality) {
 }
 
 $('#allVideos').addEventListener('click', () => convertAll('mp4', $('#allVideos')));
+
+// Playlist grande: carrega a próxima página de 200 e junta na lista.
+$('#more').addEventListener('click', async () => {
+  const btn = $('#more');
+  const i = state.info;
+  btn.disabled = true;
+  btn.textContent = 'Carregando…';
+  try {
+    const next = await api('/api/info', { method: 'POST', body: JSON.stringify({ url: state.url, page: (i.page || 0) + 1 }) });
+    if (state.info !== i) return;
+    i.items.push(...next.items);
+    i.page = next.page;
+    i.hasMore = next.hasMore;
+    i.total = next.total || i.total;
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.disabled = false;
+    if (state.info === i) renderPost();
+  }
+});
 $('#pWho').addEventListener('click', (e) => {
   if (!e.target.closest('#openList')) return;
   $('#url').value = state.info.playlistUrl;
@@ -735,7 +797,7 @@ $('#pWho').addEventListener('click', (e) => {
 
 async function convertAll(kind, btn) {
   btn.disabled = true;
-  const n = Math.min(state.info.items.length, 100);
+  const n = state.info.items.length;
   const quality = kind === 'mp4' ? (state.quality.mp4 ?? 720) : state.quality.mp3;
   try {
     for (let k = 0; k < n; k++) await startJob(k, kind, quality);
@@ -747,13 +809,14 @@ async function convertAll(kind, btn) {
 }
 
 function jobLabel(j) {
-  const k = j.kind === 'mp4' ? (j.quality ? `MP4 ${j.quality}p` : 'MP4') : j.kind === 'mp3' ? `MP3 ${j.quality}` : 'WAV';
+  const k = j.kind === 'mp4' ? (j.quality ? `MP4 ${j.quality}p` : 'MP4') : j.kind === 'mp3' ? `MP3 ${j.quality}` : j.kind === 'srt' ? 'Legenda' : 'WAV';
   return j.platform ? `${j.platform} · ${k}` : k;
 }
 
 function saveJobs() {
   store('gc-jobs', state.jobs.filter((j) => j.status !== 'expired').slice(0, 30));
 }
+const hidden = new Set(load('gc-hidden', []));
 
 function renderJobs() {
   const list = state.jobs;
@@ -794,6 +857,9 @@ $('#jobs').addEventListener('click', async (e) => {
 });
 
 $('#clear').addEventListener('click', () => {
+  // Só esconde da lista: os arquivos continuam no servidor até expirar.
+  for (const j of state.jobs) if (!ACTIVE.includes(j.status)) hidden.add(j.id);
+  store('gc-hidden', [...hidden].slice(-300));
   state.jobs = state.jobs.filter((j) => ACTIVE.includes(j.status));
   saveJobs();
   renderJobs();
@@ -833,10 +899,19 @@ function triggerDownload(href) {
   a.remove();
 }
 
-// Lista salva no navegador: reconfere no servidor o que ainda existe.
-state.jobs = load('gc-jobs', []).map((j) => ({ ...j, recheck: true }));
+// Histórico vem do servidor (sobrevive a reinícios e vale em qualquer aparelho); a cópia local
+// só aparece enquanto ele não responde.
+state.jobs = load('gc-jobs', []).filter((j) => !hidden.has(j.id));
 renderJobs();
-if (state.jobs.length) poll();
+api('/api/jobs?limit=30').then(({ jobs }) => {
+  state.jobs = jobs.filter((j) => !hidden.has(j.id));
+  saveJobs();
+  renderJobs();
+  if (state.jobs.some((j) => ACTIVE.includes(j.status))) poll();
+}).catch(() => {
+  state.jobs = state.jobs.map((j) => ({ ...j, recheck: true }));
+  if (state.jobs.length) poll();
+});
 
 // Aceita ?url=... (e o "Compartilhar" do celular quando instalado como app)
 const qs = new URLSearchParams(location.search);
