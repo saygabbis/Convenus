@@ -59,6 +59,15 @@ fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 
 const isYouTube = (url) => YT_HOSTS.test(new URL(url).hostname);
 
+// O yt-dlp regrava o cookies.txt; quando o Google desloga a conta, SID/LOGIN_INFO somem dele.
+function ytLoggedIn() {
+  try {
+    return /\t(LOGIN_INFO|SID)\t/.test(fs.readFileSync(COOKIES, 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
 function platformOf(url) {
   const host = new URL(url).hostname.replace(/^(www|m|mobile|old|vm|vt)\./, '');
   if (YT_HOSTS.test(new URL(url).hostname)) return 'YouTube';
@@ -88,7 +97,11 @@ function normalizeUrl(raw) {
 
 function friendlyError(stderr) {
   const s = String(stderr || '');
-  if (/confirm you.re not a bot|Sign in to confirm/i.test(s)) return 'O YouTube bloqueou a VPS ("confirme que não é um robô"). Tenta de novo daqui a pouco.';
+  if (/confirm you.re not a bot|Sign in to confirm/i.test(s)) {
+    return ytLoggedIn()
+      ? 'O YouTube bloqueou a VPS ("confirme que não é um robô"). Tenta de novo daqui a pouco.'
+      : 'O login da conta do YouTube caiu. Precisa exportar cookies novos da conta descartável.';
+  }
   if (/authentication is required|logged-in|login required|log in|requires? login|cookies-from-browser/i.test(s)) return 'Essa plataforma pediu login pra baixar daqui. Dá pra resolver com cookies de uma conta descartável.';
   if (/HTTP Error 403|HTTP Error 429|Blocked|rate.?limit/i.test(s)) return 'A plataforma bloqueou ou limitou a VPS. Tenta de novo daqui a pouco.';
   if (/No video could be found|There is no video|No video formats found/i.test(s)) return 'Esse post não tem vídeo.';
