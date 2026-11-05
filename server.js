@@ -84,11 +84,52 @@ function ytRelease() {
   if (next) next();
   else ytLock.busy = false;
 }
+// Cópia boa dos cookies: atualizada depois de cada uso do YouTube que deu certo e restaurada
+// sozinha quando o arquivo perde o login (o yt-dlp às vezes regrava o arquivo sem ele, mesmo
+// com a sessão ainda válida no Google). Só existe um arquivo ativo por vez, então não há duas
+// cópias girando tokens em paralelo.
+const COOKIES_MASTER = path.join(__dirname, 'cookies.master.txt');
+const RESTORE_COOLDOWN_MS = 10 * 60_000;
+let lastRestoreAt = 0;
+const hasLogin = (f) => {
+  try {
+    return /\t(LOGIN_INFO|SID)\t/.test(fs.readFileSync(f, 'utf8'));
+  } catch {
+    return false;
+  }
+};
+function backupCookies() {
+  if (!hasLogin(COOKIES)) return;
+  fs.copyFileSync(COOKIES, COOKIES_MASTER);
+  fs.chmodSync(COOKIES_MASTER, 0o600);
+}
+function restoreCookies() {
+  if (Date.now() - lastRestoreAt < RESTORE_COOLDOWN_MS || !hasLogin(COOKIES_MASTER)) return false;
+  lastRestoreAt = Date.now();
+  fs.copyFileSync(COOKIES_MASTER, COOKIES);
+  fs.chmodSync(COOKIES, 0o600);
+  ytState.lastBotAt = 0;
+  console.log(`[cookies] login sumiu do arquivo; restaurei a cópia boa (${new Date().toISOString()})`);
+  return true;
+}
+const loginTrouble = (text) => /confirm you.re not a bot|Sign in to confirm|login da conta|não é um robô/i.test(String(text || ''));
+
 async function withYt(url, fn) {
   if (!isYouTube(url)) return fn();
   await ytAcquire();
   try {
-    return await fn();
+    if (!ytLoggedIn()) restoreCookies();
+    try {
+      const out = await fn();
+      backupCookies();
+      return out;
+    } catch (e) {
+      // Uma nova tentativa com a cópia boa; se falhar de novo, o erro segue pro usuário.
+      if (!loginTrouble(e.message) || !restoreCookies()) throw e;
+      const out = await fn();
+      backupCookies();
+      return out;
+    }
   } finally {
     ytRelease();
   }
@@ -113,10 +154,12 @@ function baseArgs(url) {
   const args = ['--js-runtimes', 'node', '--no-playlist', '--no-warnings', '--no-color'];
   // Logado, o YouTube aceita a VPS direto, e um IP fixo segura a sessão por mais tempo
   // (o IP do WARP muda e o Google acaba deslogando). O WARP fica de reserva pra quando não há login.
-  if (PROXY && isYouTube(url) && !ytLoggedIn()) args.push('--proxy', PROXY);
+  const logged = isYouTube(url) && ytLoggedIn();
+  if (PROXY && isYouTube(url) && !logged) args.push('--proxy', PROXY);
   // Os cookies só vão pro YouTube: o yt-dlp regrava o arquivo no fim, e qualquer outro processo
   // escrevendo nele faria o Google ver token velho e derrubar a sessão.
-  if (isYouTube(url) && fs.existsSync(COOKIES)) args.push('--cookies', COOKIES);
+  // Sem login, nada de cookie: um pedaço de sessão saindo pelo IP do WARP parece sessão roubada pro Google.
+  if (logged) args.push('--cookies', COOKIES);
   return args;
 }
 
@@ -468,9 +511,13 @@ async function startJob(job) {
     await ytAcquire();
     job.ytLocked = true;
     if (job.status === 'canceled') return finishJob(job, 1, '');
+    if (!ytLoggedIn()) restoreCookies();
     job.phase = 'Baixando';
   }
+  runYtdlpJob(job);
+}
 
+function runYtdlpJob(job) {
   const p = spawn(YTDLP, jobArgs(job), { stdio: ['ignore', 'pipe', 'pipe'] });
   job.proc = p;
   let stderr = '';
@@ -515,7 +562,18 @@ async function startJob(job) {
     if (stderr.length > 20_000) stderr = stderr.slice(-20_000);
   });
 
-  p.on('close', (code) => finishJob(job, code, stderr));
+  p.on('close', (code) => {
+    // Login sumiu no meio: restaura a cópia boa e tenta de novo uma vez, ainda segurando a vez no YouTube.
+    if (code !== 0 && job.status !== 'canceled' && job.ytLocked && !job.retried && loginTrouble(stderr) && restoreCookies()) {
+      job.retried = true;
+      job.phase = 'Reconectando no YouTube';
+      job.percent = 0;
+      job.lastPct = 0;
+      return runYtdlpJob(job);
+    }
+    if (code === 0 && job.ytLocked) backupCookies();
+    finishJob(job, code, stderr);
+  });
 }
 
 function createJob({ mode = 'native', url, index = null, named = false, duration = 0, kind, quality, title }) {
@@ -667,7 +725,8 @@ async function renewCookies(req, res) {
   }
   const content = `# Netscape HTTP Cookie File\n${text.replace(/^# Netscape HTTP Cookie File\n?/, '')}\n`;
   fs.writeFileSync(COOKIES, content, { mode: 0o600 });
-  fs.writeFileSync(path.join(__dirname, 'cookies.master.txt'), content, { mode: 0o600 });
+  fs.writeFileSync(COOKIES_MASTER, content, { mode: 0o600 });
+  lastRestoreAt = 0;
   infoCache.clear();
 
   try {
