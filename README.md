@@ -1,4 +1,4 @@
-# GabbisConvert
+# Convenus
 
 YouTube, X/Twitter, Instagram, Bluesky, Facebook, SoundCloud, Twitch e outros sites que o yt-dlp suporta → **MP4** (até 4K), **MP3** (128–320 kbps) e **WAV**, além de **fotos de posts**, **capas**, **avatares** e **banners**. Sem propaganda, sem pop-up.
 

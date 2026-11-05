@@ -3,7 +3,7 @@
 // Extras por plataforma (fotos de posts e perfis) via APIs públicas.
 // Vídeo e áudio continuam com o yt-dlp; aqui só entra o que ele não cobre.
 
-const UA = 'GabbisConvert/1.0 (+https://convert.saygabbis.cloud)';
+const UA = 'Convenus/1.0 (+https://convert.saygabbis.cloud)';
 
 async function getJson(url) {
   const r = await fetch(url, { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(15_000) });

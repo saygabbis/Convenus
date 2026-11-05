@@ -1,5 +1,5 @@
 {
-  "name": "gabbis-convert",
+  "name": "convenus",
   "version": "1.0.0",
   "private": true,
   "description": "YouTube -> MP4 / MP3 / WAV, sem propaganda (yt-dlp + ffmpeg).",

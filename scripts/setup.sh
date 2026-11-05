@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Instala tudo que o GabbisConvert precisa, sem mexer na rede do sistema.
+# Instala tudo que o Convenus precisa, sem mexer na rede do sistema.
 #   - ffmpeg (apt, precisa de sudo)
 #   - yt-dlp, wgcf e wireproxy em ~/.local/bin
 #   - bgutil PO token provider em ./pot-provider + plugin do yt-dlp

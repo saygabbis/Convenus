@@ -1,6 +1,6 @@
 'use strict';
 
-// GabbisConvert: YouTube, X, Instagram, Bluesky e outros -> MP4 / MP3 / WAV / imagens, via yt-dlp + ffmpeg.
+// Convenus: YouTube, X, Instagram, Bluesky e outros -> MP4 / MP3 / WAV / imagens, via yt-dlp + ffmpeg.
 // Sem dependências: só Node (>= 20), yt-dlp e ffmpeg no PATH.
 
 const http = require('node:http');
@@ -452,7 +452,7 @@ async function serveMedia(req, res, params) {
 
   const ac = new AbortController();
   req.on('close', () => ac.abort());
-  const r = await fetch(u, { signal: ac.signal, headers: { 'user-agent': 'GabbisConvert/1.0' } }).catch(() => null);
+  const r = await fetch(u, { signal: ac.signal, headers: { 'user-agent': 'Convenus/1.0' } }).catch(() => null);
   const type = (r?.headers.get('content-type') || '').split(';')[0].trim();
   const len = Number(r?.headers.get('content-length') || 0);
   if (!r || !r.ok || !/^(image|video|audio)\//.test(type) || !r.body) return sendJson(res, 502, { error: 'Não consegui baixar esse arquivo.' });
@@ -537,5 +537,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`GabbisConvert em http://${HOST}:${PORT} (proxy: ${PROXY || 'nenhum'})`);
+  console.log(`Convenus em http://${HOST}:${PORT} (proxy: ${PROXY || 'nenhum'})`);
 });
