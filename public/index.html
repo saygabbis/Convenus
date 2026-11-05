@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GabbisConvert</title>
+<meta name="description" content="YouTube pra MP4, MP3 e WAV. Sem propaganda.">
+<meta name="theme-color" content="#0f0d16" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f4fb" media="(prefers-color-scheme: light)">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<style>
+  :root {
+    --bg: #f6f4fb;
+    --surface: #ffffff;
+    --surface-2: #efebf7;
+    --text: #1b1726;
+    --muted: #6b6580;
+    --border: #e0daec;
+    --accent: #8b5cf6;
+    --accent-2: #ec4899;
+    --accent-text: #ffffff;
+    --ok: #16a34a;
+    --err: #dc2626;
+    --shadow: 0 10px 30px -12px rgb(60 30 120 / .18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0d16;
+      --surface: #1a1724;
+      --surface-2: #241f33;
+      --text: #f1eef8;
+      --muted: #a39cb8;
+      --border: #2f2942;
+      --accent: #a78bfa;
+      --accent-2: #f472b6;
+      --accent-text: #160f24;
+      --ok: #4ade80;
+      --err: #f87171;
+      --shadow: 0 10px 30px -12px rgb(0 0 0 / .6);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100dvh;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 28px 16px calc(40px + env(safe-area-inset-bottom)); }
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+  header svg { width: 34px; height: 34px; flex: none; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -.02em; }
+  h1 span {
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub { color: var(--muted); font-size: 13px; margin: 0; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+    padding: 16px; box-shadow: var(--shadow); margin-bottom: 14px;
+  }
+  .input-row { display: flex; gap: 8px; }
+  input[type=url] {
+    flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; outline: none;
+  }
+  input[type=url]:focus { border-color: var(--accent); }
+  button {
+    font: inherit; font-weight: 600; border: 0; border-radius: 12px; cursor: pointer;
+    padding: 12px 16px; color: var(--text); background: var(--surface-2);
+    transition: transform .08s, opacity .15s;
+  }
+  button:active { transform: scale(.97); }
+  button:disabled { opacity: .5; cursor: default; }
+  .primary { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: var(--accent-text); }
+  .full { width: 100%; padding: 14px; font-size: 17px; }
+
+  .video { display: flex; gap: 12px; align-items: center; }
+  .video img { width: 128px; aspect-ratio: 16/9; object-fit: cover; border-radius: 10px; flex: none; background: var(--surface-2); }
+  .video .t { font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .video .m { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: var(--surface-2); padding: 4px; border-radius: 14px; margin: 16px 0 12px; }
+  .tabs button { background: transparent; padding: 10px; }
+  .tabs button[aria-selected=true] { background: var(--surface); box-shadow: 0 1px 4px rgb(0 0 0 / .12); }
+  .label { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .chips button { padding: 9px 13px; font-size: 14px; border: 1px solid var(--border); background: transparent; }
+  .chips button[aria-pressed=true] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  .chips small { color: var(--muted); font-weight: 500; margin-left: 3px; }
+  .note { color: var(--muted); font-size: 12px; margin: -6px 0 14px; }
+
+  .job { display: grid; gap: 8px; }
+  .job + .job { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
+  .job .row { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .job .name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--surface-2); color: var(--muted); flex: none; }
+  .bar { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .4s; }
+  .bar.busy i { width: 100% !important; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  .status { font-size: 13px; color: var(--muted); }
+  .status.err { color: var(--err); }
+  .actions { display: flex; gap: 8px; }
+  .actions a, .actions button { flex: 1; text-align: center; text-decoration: none; padding: 10px; font-size: 14px; border-radius: 10px; }
+  .actions a { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: var(--accent-text); font-weight: 600; }
+
+  .msg { padding: 10px 12px; border-radius: 10px; font-size: 14px; margin-top: 10px; }
+  .msg.err { background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); }
+  .spinner { width: 18px; height: 18px; border: 2.5px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: -4px; margin-right: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  [hidden] { display: none !important; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 24px; }
+  @media (max-width: 400px) { .video img { width: 104px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#g)"/><path d="M26 20v24l18-12z" fill="#fff"/></svg>
+    <div>
+      <h1>Gabbis<span>Convert</span></h1>
+      <p class="sub">YouTube → MP4, MP3 e WAV. Sem propaganda.</p>
+    </div>
+  </header>
+
+  <form class="card" id="form" autocomplete="off">
+    <div class="input-row">
+      <input type="url" id="url" placeholder="Cola o link do YouTube" inputmode="url" required>
+      <button type="button" id="paste" title="Colar">Colar</button>
+    </div>
+    <div id="loading" class="status" style="margin-top:12px" hidden><span class="spinner"></span>Buscando o vídeo…</div>
+    <div id="formErr" class="msg err" hidden></div>
+  </form>
+
+  <section class="card" id="pick" hidden>
+    <div class="video">
+      <img id="thumb" alt="">
+      <div style="min-width:0">
+        <div class="t" id="title"></div>
+        <div class="m" id="meta"></div>
+      </div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" data-kind="mp4" aria-selected="true">MP4</button>
+      <button type="button" role="tab" data-kind="mp3" aria-selected="false">MP3</button>
+      <button type="button" role="tab" data-kind="wav" aria-selected="false">WAV</button>
+    </div>
+
+    <p class="label" id="qLabel">Qualidade</p>
+    <div class="chips" id="chips"></div>
+    <p class="note" id="note" hidden></p>
+
+    <button type="button" class="primary full" id="go">Converter</button>
+  </section>
+
+  <section class="card" id="jobsCard" hidden>
+    <p class="label" style="margin-bottom:12px">Conversões</p>
+    <div id="jobs"></div>
+  </section>
+
+  <footer>Os arquivos ficam disponíveis por 1 hora.</footer>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const state = { info: null, url: '', kind: 'mp4', quality: { mp4: null, mp3: '320' }, jobs: [] };
+const RES_NAMES = { 4320: '8K', 2160: '4K', 1440: '2K', 1080: 'Full HD', 720: 'HD' };
+
+function fmtDur(s) {
+  s = Math.round(s || 0);
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+function fmtSize(b) {
+  if (!b) return '';
+  const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return `${b.toFixed(i > 1 ? 1 : 0)} ${u[i]}`;
+}
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `Erro ${r.status}`);
+  return j;
+}
+
+// ---------- buscar vídeo ----------
+let lookupSeq = 0;
+async function lookup(url) {
+  url = url.trim();
+  if (!url || url === state.url) return;
+  const seq = ++lookupSeq;
+  state.url = url;
+  $('#formErr').hidden = true;
+  $('#pick').hidden = true;
+  $('#loading').hidden = false;
+  try {
+    const info = await api('/api/info', { method: 'POST', body: JSON.stringify({ url }) });
+    if (seq !== lookupSeq) return;
+    state.info = info;
+    state.quality.mp4 = info.heights.includes(1080) ? 1080 : info.heights[0];
+    renderPick();
+  } catch (e) {
+    if (seq !== lookupSeq) return;
+    state.url = '';
+    $('#formErr').textContent = e.message;
+    $('#formErr').hidden = false;
+  } finally {
+    if (seq === lookupSeq) $('#loading').hidden = true;
+  }
+}
+
+$('#form').addEventListener('submit', (e) => { e.preventDefault(); lookup($('#url').value); });
+$('#url').addEventListener('paste', () => setTimeout(() => lookup($('#url').value), 0));
+$('#url').addEventListener('change', () => lookup($('#url').value));
+$('#paste').addEventListener('click', async () => {
+  try {
+    const t = await navigator.clipboard.readText();
+    $('#url').value = t;
+    lookup(t);
+  } catch { $('#url').focus(); }
+});
+
+// ---------- escolher formato ----------
+function renderPick() {
+  const i = state.info;
+  $('#thumb').src = i.thumbnail;
+  $('#title').textContent = i.title;
+  $('#meta').textContent = [i.uploader, fmtDur(i.duration)].filter(Boolean).join(' · ');
+  document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', b.dataset.kind === state.kind));
+
+  const chips = $('#chips');
+  const note = $('#note');
+  note.hidden = true;
+  if (state.kind === 'mp4') {
+    $('#qLabel').textContent = 'Resolução';
+    chips.innerHTML = i.heights.map((h) =>
+      `<button type="button" data-q="${h}" aria-pressed="${h === state.quality.mp4}">${h}p${RES_NAMES[h] ? `<small>${RES_NAMES[h]}</small>` : ''}</button>`).join('');
+    if (state.quality.mp4 > 1080) {
+      note.textContent = 'Acima de 1080p o YouTube só entrega VP9/AV1: toca no celular e no VLC, mas alguns editores antigos podem não abrir.';
+      note.hidden = false;
+    }
+  } else if (state.kind === 'mp3') {
+    $('#qLabel').textContent = 'Bitrate';
+    chips.innerHTML = ['320', '256', '192', '128'].map((q) =>
+      `<button type="button" data-q="${q}" aria-pressed="${q === state.quality.mp3}">${q} kbps${q === '320' ? '<small>máx</small>' : ''}</button>`).join('');
+  } else {
+    $('#qLabel').textContent = 'Qualidade';
+    chips.innerHTML = '<button type="button" aria-pressed="true">Sem perda<small>PCM 16-bit</small></button>';
+    note.textContent = 'WAV é pesado: uns 10 MB por minuto.';
+    note.hidden = false;
+  }
+  $('#pick').hidden = false;
+}
+
+document.querySelector('.tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-kind]');
+  if (!b) return;
+  state.kind = b.dataset.kind;
+  renderPick();
+});
+$('#chips').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-q]');
+  if (!b) return;
+  state.quality[state.kind] = state.kind === 'mp4' ? Number(b.dataset.q) : b.dataset.q;
+  renderPick();
+});
+
+// ---------- conversões ----------
+$('#go').addEventListener('click', async () => {
+  const btn = $('#go');
+  btn.disabled = true;
+  try {
+    const job = await api('/api/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ url: state.url, kind: state.kind, quality: state.quality[state.kind], title: state.info.title }),
+    });
+    job.thumb = state.info.thumbnail;
+    state.jobs.unshift(job);
+    renderJobs();
+    poll();
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function jobLabel(j) {
+  if (j.kind === 'mp4') return `MP4 ${j.quality}p`;
+  if (j.kind === 'mp3') return `MP3 ${j.quality}k`;
+  return 'WAV';
+}
+
+function renderJobs() {
+  $('#jobsCard').hidden = state.jobs.length === 0;
+  $('#jobs').innerHTML = state.jobs.map((j) => {
+    const busy = j.status === 'running' && (j.percent >= 100 || j.percent === 0);
+    let status = esc(j.phase);
+    if (j.status === 'running' && j.percent > 0 && j.percent < 100) {
+      status += ` · ${j.percent.toFixed(0)}%${j.speed ? ' · ' + esc(j.speed) : ''}${j.eta ? ' · falta ' + esc(j.eta) : ''}`;
+    }
+    if (j.status === 'done') status = `Pronto · ${fmtSize(j.size)}`;
+    if (j.status === 'error') status = esc(j.error);
+    if (j.status === 'canceled') status = 'Cancelado';
+    if (j.status === 'expired') status = 'Expirou';
+    const pct = j.status === 'done' ? 100 : j.percent;
+    return `<div class="job">
+      <div class="row"><span class="name">${esc(j.title)}</span><span class="badge">${jobLabel(j)}</span></div>
+      ${['queued', 'running'].includes(j.status) ? `<div class="bar${busy || j.status === 'queued' ? ' busy' : ''}"><i style="width:${pct}%"></i></div>` : ''}
+      <div class="status${j.status === 'error' ? ' err' : ''}">${status}</div>
+      <div class="actions">
+        ${j.status === 'done' ? `<a href="/api/jobs/${j.id}/file" download>Baixar</a>` : ''}
+        ${['queued', 'running'].includes(j.status) ? `<button type="button" data-cancel="${j.id}">Cancelar</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+$('#jobs').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-cancel]');
+  if (!b) return;
+  b.disabled = true;
+  await api(`/api/jobs/${b.dataset.cancel}`, { method: 'DELETE' }).catch(() => {});
+});
+
+let polling = false;
+async function poll() {
+  if (polling) return;
+  polling = true;
+  while (state.jobs.some((j) => ['queued', 'running'].includes(j.status))) {
+    for (const j of state.jobs.filter((j) => ['queued', 'running'].includes(j.status))) {
+      try {
+        const upd = await api(`/api/jobs/${j.id}`);
+        const wasDone = j.status === 'done';
+        Object.assign(j, upd);
+        if (!wasDone && j.status === 'done') autoDownload(j);
+      } catch {
+        j.status = 'expired';
+      }
+    }
+    renderJobs();
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  polling = false;
+}
+
+function autoDownload(j) {
+  const a = document.createElement('a');
+  a.href = `/api/jobs/${j.id}/file`;
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+// Aceita ?url=... (e o "compartilhar" do Android quando instalado como app)
+const qs = new URLSearchParams(location.search);
+const shared = qs.get('url') || qs.get('text') || '';
+const m = shared.match(/https?:\/\/\S+/);
+if (m) { $('#url').value = m[0]; lookup(m[0]); history.replaceState(null, '', '/'); }
+</script>
+</body>
+</html>

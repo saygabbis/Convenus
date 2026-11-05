@@ -1,0 +1,14 @@
+{
+  "name": "GabbisConvert",
+  "short_name": "Convert",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0d16",
+  "theme_color": "#0f0d16",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }],
+  "share_target": {
+    "action": "/",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  }
+}

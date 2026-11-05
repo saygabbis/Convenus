@@ -1,0 +1,13 @@
+{
+  "name": "gabbis-convert",
+  "version": "1.0.0",
+  "private": true,
+  "description": "YouTube -> MP4 / MP3 / WAV, sem propaganda (yt-dlp + ffmpeg).",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js",
+    "start:vps": "bash scripts/start-vps.sh",
+    "setup": "bash scripts/setup.sh"
+  }
+}

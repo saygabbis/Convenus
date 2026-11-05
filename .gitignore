@@ -1,0 +1,8 @@
+node_modules/
+downloads/
+pot-provider/
+warp/
+logs/
+.env*
+cookies.txt
+*.cookies.txt
