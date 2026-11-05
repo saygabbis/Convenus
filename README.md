@@ -1,12 +1,13 @@
 # GabbisConvert
 
-YouTube → **MP4** (144p até 4K), **MP3** (128–320 kbps) e **WAV**. Sem propaganda, sem pop-up.
+YouTube, X/Twitter, Instagram, Bluesky, Facebook, SoundCloud, Twitch e outros sites que o yt-dlp suporta → **MP4** (até 4K), **MP3** (128–320 kbps) e **WAV**, além de **fotos de posts**, **capas**, **avatares** e **banners**. Sem propaganda, sem pop-up.
 
 Rodando em https://convert.saygabbis.cloud
 
 ## Como funciona
 
 - `server.js`: servidor Node sem dependências que chama o [yt-dlp](https://github.com/yt-dlp/yt-dlp) + ffmpeg, com fila (2 conversões por vez) e progresso.
+- `providers.js`: fotos de posts e perfis via APIs públicas (FxTwitter pro X, API oficial do Bluesky).
 - `public/`: a página (dá pra instalar como app no celular e usar o "Compartilhar" do YouTube).
 - Os arquivos convertidos são apagados depois de 1 hora.
 - O YouTube bloqueia IP de datacenter, então o yt-dlp sai pelo **Cloudflare WARP** (via `wireproxy`, um proxy SOCKS local que não mexe na rede do sistema) e usa o [bgutil PO token provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider).

@@ -115,6 +115,16 @@
   .loading { display: flex; align-items: center; gap: 10px; padding: 4px 6px 2px; font-size: 14px; width: 100%; }
   .spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--fill); border-top-color: var(--ac); animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .sites { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 4px 2px; font-size: 12px; }
+  .sites span { background: var(--fill); border-radius: 99px; padding: 3px 10px; }
+  .media { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  @media (min-width: 640px) { .media { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  .tile { display: flex; flex-direction: column; gap: 8px; text-decoration: none; color: inherit; animation: rise .5s cubic-bezier(.22,1,.36,1) both; }
+  .tile .pic { aspect-ratio: 1; border-radius: 16px; overflow: hidden; background: var(--fill); position: relative; }
+  .tile .pic img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .4s cubic-bezier(.22,1,.36,1); }
+  .tile:hover .pic img { transform: scale(1.05); }
+  .tile .pic .tag { position: absolute; left: 8px; bottom: 8px; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 7px; background: rgb(0 0 0 / .55); color: #fff; }
+  .tile .k { width: 100%; padding: 9px; font-size: 13px; }
   .msg-err { width: 100%; padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); font-size: 14px; }
 
   /* vídeo */
@@ -190,7 +200,7 @@
       <svg width="50" height="50" viewBox="0 0 52 52" aria-hidden="true"><rect width="52" height="52" rx="16" fill="#f2734f"/><path d="M26 13v18M18 23l8 8 8-8M17 38h18" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <div>
         <h1>GabbisConvert</h1>
-        <p class="mut">MP4, MP3, WAV, capas e avatares — sem propaganda</p>
+        <p class="mut">Vídeos, músicas, fotos e perfis — sem propaganda</p>
       </div>
     </div>
     <button class="k icon-btn" id="theme" type="button" aria-label="Trocar tema">
@@ -204,9 +214,10 @@
         <label for="url" class="sr">Link do YouTube</label>
         <div class="field">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="mut" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
-          <input type="url" id="url" placeholder="Cola um link de vídeo ou de canal" inputmode="url" required>
+          <input type="url" id="url" placeholder="Cola um link de vídeo, post ou perfil" inputmode="url" required>
         </div>
         <button class="k" type="button" id="paste">Colar</button>
+        <div class="sites mut" id="sites"></div>
         <div class="loading mut" id="loading" hidden><span class="spin"></span>Buscando no YouTube…</div>
         <div class="msg-err" id="formErr" hidden></div>
       </form>
@@ -220,6 +231,7 @@
           </div>
         </div>
 
+        <div id="convert">
         <div class="tabs" role="tablist" aria-label="Formato">
           <button class="k" type="button" role="tab" data-kind="mp4">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9v6l5-3z"/></svg>MP4
@@ -240,6 +252,12 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
           <span id="goLabel">Converter</span>
         </button>
+        </div>
+
+        <div class="section-gap" id="mediaWrap" hidden>
+          <p class="label mut" id="mediaLabel">Fotos do post</p>
+          <div class="media" id="media"></div>
+        </div>
 
         <div class="section-gap" id="thumbsWrap" hidden>
           <p class="label mut">Baixar capa</p>
@@ -315,7 +333,11 @@ function fmtSize(b) {
 }
 function fmtCount(n) { return new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(n); }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-function imgLink(url, name) { return `/api/image?u=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`; }
+function imgLink(url, name) { return `/api/media?u=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`; }
+function fileBase(s) { return String(s || 'arquivo').replace(/\s+/g, ' ').trim().slice(0, 80); }
+
+$('#sites').innerHTML = ['YouTube', 'X / Twitter', 'Instagram', 'Bluesky', 'Facebook', 'SoundCloud', 'Twitch', 'Streamable', 'e mais']
+  .map((s) => `<span>${s}</span>`).join('');
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
@@ -357,9 +379,11 @@ async function lookup(url) {
     const info = await api('/api/info', { method: 'POST', body: JSON.stringify({ url }) });
     if (my !== seq) return;
     state.info = info;
-    if (info.type === 'channel') renderChannel();
+    if (info.type === 'profile') renderChannel();
     else {
       state.quality.mp4 = info.heights.includes(1080) ? 1080 : info.heights[0];
+      if (!info.heights.length) state.kind = 'mp3';
+      else if (!info.hasAudio) state.kind = 'mp4';
       renderVideo();
     }
   } catch (e) {
@@ -386,11 +410,30 @@ $('#paste').addEventListener('click', async () => {
 // ---------- vídeo ----------
 function renderVideo() {
   const i = state.info;
-  $('#vThumb').src = i.thumbnail;
+  const cover = i.thumbnail || i.media?.[0]?.thumb || '';
+  $('#vThumb').src = cover;
+  $('#vThumb').hidden = !cover;
   $('#vDur').textContent = fmtDur(i.duration);
-  $('#vTitle').textContent = i.title;
-  $('#vMeta').textContent = i.uploader;
-  document.querySelectorAll('.tabs .k').forEach((b) => b.setAttribute('aria-selected', b.dataset.kind === state.kind));
+  $('#vDur').hidden = !i.duration;
+  $('#vTitle').textContent = i.title || `Post de ${i.uploader}`;
+  $('#vMeta').textContent = [i.platform, i.uploader].filter(Boolean).join(' · ');
+  $('#convert').hidden = !i.convertible;
+  const avail = { mp4: i.heights.length > 0, mp3: i.hasAudio, wav: i.hasAudio };
+  document.querySelectorAll('.tabs .k').forEach((b) => {
+    b.hidden = !avail[b.dataset.kind];
+    b.setAttribute('aria-selected', b.dataset.kind === state.kind);
+  });
+  document.querySelector('.tabs').style.gridTemplateColumns = `repeat(${Object.values(avail).filter(Boolean).length || 1}, minmax(0, 1fr))`;
+
+  const media = i.media || [];
+  const base = fileBase(`${i.uploader || i.platform} - ${i.id || 'post'}`);
+  $('#mediaWrap').hidden = media.length === 0;
+  $('#mediaLabel').textContent = media.some((m) => m.kind === 'video') ? 'Mídia do post' : media.length > 1 ? `Fotos do post (${media.length})` : 'Foto do post';
+  $('#media').innerHTML = media.map((m, n) => `
+    <a class="tile" href="${esc(imgLink(m.url, `${base} - ${n + 1}`))}" download>
+      <div class="pic">${m.thumb ? `<img src="${esc(m.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}${m.width ? `<span class="tag">${m.kind === 'video' ? 'vídeo · ' : ''}${m.width}×${m.height}</span>` : ''}</div>
+      <span class="k">${svg('dl', 15)}Baixar ${m.kind === 'video' ? 'vídeo' : 'foto'}</span>
+    </a>`).join('');
 
   const chips = $('#chips');
   const note = $('#note');
@@ -420,7 +463,7 @@ function renderVideo() {
   const thumbs = i.thumbs || [];
   $('#thumbsWrap').hidden = thumbs.length === 0;
   $('#thumbs').innerHTML = thumbs.map((t) =>
-    `<a class="k" href="${esc(imgLink(t.url, `${i.title} - capa ${t.label}`))}" download>${esc(t.label)} <small>${esc(t.size)}</small></a>`).join('');
+    `<a class="k" href="${esc(imgLink(t.url, `${fileBase(i.title)} - capa ${t.label}`))}" download>${esc(t.label)} <small>${esc(t.size)}</small></a>`).join('');
 
   $('#video').hidden = false;
 }
@@ -442,7 +485,8 @@ $('#chips').addEventListener('click', (e) => {
 function renderChannel() {
   const c = state.info;
   $('#cName').textContent = c.title;
-  $('#cMeta').textContent = [c.handle, c.followers ? `${fmtCount(c.followers)} inscritos` : ''].filter(Boolean).join(' · ');
+  const fans = c.platform === 'YouTube' ? 'inscritos' : 'seguidores';
+  $('#cMeta').textContent = [c.platform, c.handle, c.followers ? `${fmtCount(c.followers)} ${fans}` : ''].filter(Boolean).join(' · ');
   $('#cBanner').innerHTML = c.banner ? `<img src="${esc(c.banner)}" alt="" referrerpolicy="no-referrer">` : '';
   $('#cAvatar').innerHTML = c.avatar ? `<img src="${esc(c.avatar)}" alt="" referrerpolicy="no-referrer">` : '<span></span>';
   const av = $('#cAvatarBtn'), bn = $('#cBannerBtn');

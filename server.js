@@ -1,6 +1,6 @@
 'use strict';
 
-// GabbisConvert: YouTube -> MP4 / MP3 / WAV via yt-dlp + ffmpeg.
+// GabbisConvert: YouTube, X, Instagram, Bluesky e outros -> MP4 / MP3 / WAV / imagens, via yt-dlp + ffmpeg.
 // Sem dependências: só Node (>= 20), yt-dlp e ffmpeg no PATH.
 
 const http = require('node:http');
@@ -8,6 +8,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
+const { Readable } = require('node:stream');
+const providers = require('./providers');
 
 const PORT = Number(process.env.PORT || 5180);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -15,7 +17,7 @@ const YTDLP = process.env.YTDLP || path.join(process.env.HOME || '', '.local/bin
 const PROXY = process.env.YTDLP_PROXY ?? 'socks5://127.0.0.1:40000';
 // cookies.txt (formato Netscape) de uma conta descartável: o YouTube pede login pra IP de datacenter.
 const COOKIES = path.resolve(process.env.YTDLP_COOKIES || path.join(__dirname, 'cookies.txt'));
-const DOWNLOAD_DIR =path.resolve(process.env.DOWNLOAD_DIR || path.join(__dirname, 'downloads'));
+const DOWNLOAD_DIR = path.resolve(process.env.DOWNLOAD_DIR || path.join(__dirname, 'downloads'));
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_RUNNING = Number(process.env.MAX_RUNNING || 2);
 const JOB_TTL_MS = Number(process.env.JOB_TTL_MIN || 60) * 60_000;
@@ -28,10 +30,22 @@ const THUMBS = [
   { file: 'hqdefault', label: 'HQ', size: '480×360' },
   { file: 'mqdefault', label: 'MQ', size: '320×180' },
 ];
-// Só baixa imagem desses hosts (evita usar o servidor como proxy aberto).
-const IMAGE_HOSTS = new Set(['i.ytimg.com', 'yt3.googleusercontent.com', 'yt3.ggpht.com']);
-const IMAGE_MAX_BYTES = 25 * 1024 * 1024;
+// Só baixa imagem/vídeo direto desses CDNs (evita usar o servidor como proxy aberto).
+const MEDIA_HOSTS = [
+  'ytimg.com', 'ggpht.com', 'googleusercontent.com', 'twimg.com', 'cdninstagram.com', 'fbcdn.net', 'redd.it',
+  'redditmedia.com', 'tiktokcdn.com', 'tiktokcdn-us.com', 'tiktokcdn-eu.com', 'ibyteimg.com', 'muscdn.com', 'vimeocdn.com',
+  'sndcdn.com', 'pinimg.com', 'bsky.app', 'jtvnw.net', 'dmcdn.net', 'hdslb.com', 'tumblr.com', 'bcbits.com',
+];
+const MEDIA_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 const YT_HOSTS = /^(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com)$/i;
+// Outras plataformas (o yt-dlp suporta todas). Lista fechada pra não virar proxy aberto.
+const OTHER_HOSTS = [
+  'twitter.com', 'x.com', 'instagram.com', 'reddit.com', 'redd.it', 'tiktok.com', 'facebook.com', 'fb.watch',
+  'vimeo.com', 'twitch.tv', 'soundcloud.com', 'pinterest.com', 'pin.it', 'bsky.app', 'threads.net', 'threads.com',
+  'dailymotion.com', 'dai.ly', 'kick.com', 'bilibili.com', 'b23.tv', 'streamable.com', 'tumblr.com', 'bandcamp.com',
+];
+const PLATFORM_NAMES = { 'x.com': 'X', 'twitter.com': 'X', 'redd.it': 'Reddit', 'fb.watch': 'Facebook', 'pin.it': 'Pinterest', 'dai.ly': 'Dailymotion', 'b23.tv': 'Bilibili', 'bsky.app': 'Bluesky', 'threads.com': 'Threads', 'tiktok.com': 'TikTok', 'soundcloud.com': 'SoundCloud', 'twitch.tv': 'Twitch', 'bilibili.com': 'Bilibili' };
+const hostIn = (host, list) => list.some((d) => host === d || host.endsWith(`.${d}`));
 
 const jobs = new Map();
 const infoCache = new Map();
@@ -43,9 +57,19 @@ fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 
 // ---------- yt-dlp ----------
 
-function baseArgs() {
+const isYouTube = (url) => YT_HOSTS.test(new URL(url).hostname);
+
+function platformOf(url) {
+  const host = new URL(url).hostname.replace(/^(www|m|mobile|old|vm|vt)\./, '');
+  if (YT_HOSTS.test(new URL(url).hostname)) return 'YouTube';
+  const d = OTHER_HOSTS.find((x) => host === x || host.endsWith(`.${x}`));
+  return PLATFORM_NAMES[d] || (d ? d.split('.')[0].replace(/^./, (c) => c.toUpperCase()) : 'Link');
+}
+
+function baseArgs(url) {
   const args = ['--js-runtimes', 'node', '--no-playlist', '--no-warnings', '--no-color'];
-  if (PROXY) args.push('--proxy', PROXY);
+  // O WARP só é necessário pro YouTube; as outras plataformas saem direto.
+  if (PROXY && isYouTube(url)) args.push('--proxy', PROXY);
   if (fs.existsSync(COOKIES)) args.push('--cookies', COOKIES);
   return args;
 }
@@ -57,13 +81,18 @@ function normalizeUrl(raw) {
   } catch {
     return null;
   }
-  if (!/^https?:$/.test(u.protocol) || !YT_HOSTS.test(u.hostname)) return null;
+  if (!/^https?:$/.test(u.protocol)) return null;
+  if (!YT_HOSTS.test(u.hostname) && !hostIn(u.hostname.toLowerCase(), OTHER_HOSTS)) return null;
   return u.toString();
 }
 
 function friendlyError(stderr) {
   const s = String(stderr || '');
   if (/confirm you.re not a bot|Sign in to confirm/i.test(s)) return 'O YouTube bloqueou a VPS ("confirme que não é um robô"). Tenta de novo daqui a pouco.';
+  if (/authentication is required|logged-in|login required|log in|requires? login|cookies-from-browser/i.test(s)) return 'Essa plataforma pediu login pra baixar daqui. Dá pra resolver com cookies de uma conta descartável.';
+  if (/HTTP Error 403|HTTP Error 429|Blocked|rate.?limit/i.test(s)) return 'A plataforma bloqueou ou limitou a VPS. Tenta de novo daqui a pouco.';
+  if (/No video could be found|There is no video|No video formats found/i.test(s)) return 'Esse post não tem vídeo.';
+  if (/Unsupported URL/i.test(s)) return 'Esse link não é suportado.';
   if (/Private video/i.test(s)) return 'Esse vídeo é privado.';
   if (/age|inappropriate/i.test(s) && /sign in/i.test(s)) return 'Esse vídeo tem restrição de idade e precisa de login.';
   if (/Video unavailable|This video is unavailable/i.test(s)) return 'Vídeo indisponível.';
@@ -87,7 +116,19 @@ function runCapture(args) {
 
 function isChannelUrl(url) {
   const { hostname, pathname } = new URL(url);
-  return !/youtu\.be$/i.test(hostname) && /^\/(@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+)(\/[^/]*)?\/?$/.test(pathname);
+  return YT_HOSTS.test(hostname) && !/youtu\.be$/i.test(hostname)
+    && /^\/(@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+)(\/[^/]*)?\/?$/.test(pathname);
+}
+
+const isProfileUrl = (url) => isChannelUrl(url) || Boolean(providers.match(url)?.profile);
+
+// Fora do YouTube não há tamanhos fixos de capa: oferece a maior que a plataforma tiver.
+function bestThumb(j) {
+  const area = (t) => (t.width || 0) * (t.height || 0);
+  const best = (j.thumbnails || []).filter((t) => /^https:/.test(t.url || ''))
+    .sort((a, b) => area(b) - area(a) || (b.preference || 0) - (a.preference || 0))[0]
+    || (j.thumbnail ? { url: j.thumbnail } : null);
+  return best ? [{ label: 'Original', size: best.width ? `${best.width}×${best.height}` : '', url: best.url }] : [];
 }
 
 async function thumbOptions(id) {
@@ -103,14 +144,14 @@ async function thumbOptions(id) {
 }
 
 async function getChannel(url) {
-  const raw = await runCapture([...baseArgs(), '-J', '--flat-playlist', '--playlist-items', '0', '--', url]);
+  const raw = await runCapture([...baseArgs(url), '-J', '--flat-playlist', '--playlist-items', '0', '--', url]);
   const j = JSON.parse(raw);
   const thumbs = j.thumbnails || [];
   const pick = (id, fallback) => (thumbs.find((t) => t.id === id) || fallback() || {}).url || null;
   const widest = (filter) => thumbs.filter(filter).sort((a, b) => (b.width || 0) - (a.width || 0))[0];
   return {
-    type: 'channel',
-    id: j.channel_id || j.id,
+    type: 'profile',
+    platform: 'YouTube',
     title: j.channel || j.title || j.uploader_id,
     handle: j.uploader_id || '',
     followers: j.channel_follower_count || 0,
@@ -123,40 +164,68 @@ async function getInfo(url) {
   const hit = infoCache.get(url);
   if (hit && Date.now() - hit.at < INFO_TTL_MS) return hit.info;
 
-  if (isChannelUrl(url)) {
-    const info = await getChannel(url);
-    infoCache.set(url, { at: Date.now(), info });
-    return info;
-  }
+  const info = await resolveInfo(url);
+  infoCache.set(url, { at: Date.now(), info });
+  return info;
+}
 
-  const raw = await runCapture([...baseArgs(), '-J', '--', url]);
-  const j = JSON.parse(raw);
-  const heights = [
-    ...new Set(
-      (j.formats || [])
-        .filter((f) => f.vcodec && f.vcodec !== 'none' && f.height)
-        .map((f) => f.height),
-    ),
-  ].sort((a, b) => b - a);
+async function resolveInfo(url) {
+  if (isChannelUrl(url)) return getChannel(url);
+
+  const extra = providers.match(url);
+  if (extra?.profile) return { type: 'profile', platform: extra.platform, ...(await extra.profile()) };
+
+  // yt-dlp (vídeo/áudio) e a API da plataforma (fotos) em paralelo; vale o que responder.
+  const [yd, ex] = await Promise.allSettled([
+    runCapture([...baseArgs(url), '-J', '--', url]).then((raw) => JSON.parse(raw)),
+    extra?.post ? extra.post() : Promise.resolve(null),
+  ]);
+  const post = ex.status === 'fulfilled' ? ex.value : null;
+  if (yd.status === 'rejected' && !post?.media?.length) throw yd.reason;
 
   const info = {
-    type: 'video',
-    id: j.id,
-    title: j.title,
-    uploader: j.uploader || j.channel || '',
-    duration: j.duration || 0,
-    thumbnail: j.thumbnail || `https://i.ytimg.com/vi/${j.id}/hqdefault.jpg`,
-    isLive: Boolean(j.is_live),
-    heights,
-    thumbs: await thumbOptions(j.id),
+    type: 'post',
+    platform: platformOf(url),
+    title: post?.title || '',
+    uploader: post?.uploader || '',
+    duration: 0,
+    thumbnail: post?.thumbnail || null,
+    isLive: false,
+    convertible: false,
+    heights: [],
+    hasAudio: false,
+    thumbs: [],
+    media: [],
   };
-  infoCache.set(url, { at: Date.now(), info });
+
+  if (yd.status === 'fulfilled') {
+    let j = yd.value;
+    // Post com vários vídeos (ex.: tweet): o yt-dlp devolve playlist; usa o primeiro.
+    if (j._type === 'playlist' && Array.isArray(j.entries) && j.entries.length) j = { ...j.entries[0], title: j.entries[0].title || j.title };
+    const formats = j.formats || [];
+    Object.assign(info, {
+      id: j.id,
+      title: j.title || info.title,
+      uploader: j.uploader || j.channel || j.uploader_id || info.uploader,
+      duration: j.duration || 0,
+      thumbnail: j.thumbnail || info.thumbnail || (isYouTube(url) ? `https://i.ytimg.com/vi/${j.id}/hqdefault.jpg` : null),
+      isLive: Boolean(j.is_live),
+      convertible: true,
+      heights: [...new Set(formats.filter((f) => f.vcodec && f.vcodec !== 'none' && f.height).map((f) => f.height))].sort((a, b) => b - a),
+      // Sem acodec informado (X, Bluesky…) assume que tem som.
+      hasAudio: formats.length === 0 || formats.some((f) => f.acodec !== 'none'),
+      thumbs: isYouTube(url) ? await thumbOptions(j.id) : bestThumb(j),
+    });
+  }
+
+  // Fotos sempre; vídeo direto só quando o yt-dlp não conseguiu converter.
+  if (post?.media) info.media = post.media.filter((m) => m.kind === 'image' || !info.convertible);
   return info;
 }
 
 function jobArgs(job) {
   const args = [
-    ...baseArgs(),
+    ...baseArgs(job.url),
     '--newline',
     '--progress-template', 'download:@@P %(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s',
     '--print', 'after_move:@@F %(filepath)s',
@@ -366,31 +435,38 @@ function safeName(s) {
   return String(s || 'imagem').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim().slice(0, 150) || 'imagem';
 }
 
-async function serveImage(res, params) {
+const MEDIA_EXT = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif',
+  'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a',
+};
+
+// Repassa (em streaming) uma imagem ou vídeo direto de um CDN permitido, já com nome de arquivo.
+async function serveMedia(req, res, params) {
   let u;
   try {
     u = new URL(params.get('u') || '');
   } catch {
-    return sendJson(res, 400, { error: 'Link de imagem inválido.' });
+    return sendJson(res, 400, { error: 'Link inválido.' });
   }
-  if (u.protocol !== 'https:' || !IMAGE_HOSTS.has(u.hostname)) return sendJson(res, 400, { error: 'Host não permitido.' });
+  if (u.protocol !== 'https:' || !hostIn(u.hostname.toLowerCase(), MEDIA_HOSTS)) return sendJson(res, 400, { error: 'Host não permitido.' });
 
-  const r = await fetch(u, { signal: AbortSignal.timeout(20_000) }).catch(() => null);
-  const type = r?.headers.get('content-type') || '';
-  if (!r || !r.ok || !type.startsWith('image/')) return sendJson(res, 502, { error: 'Não consegui baixar essa imagem.' });
-  const buf = Buffer.from(await r.arrayBuffer());
-  if (buf.length > IMAGE_MAX_BYTES) return sendJson(res, 502, { error: 'Imagem grande demais.' });
+  const ac = new AbortController();
+  req.on('close', () => ac.abort());
+  const r = await fetch(u, { signal: ac.signal, headers: { 'user-agent': 'GabbisConvert/1.0' } }).catch(() => null);
+  const type = (r?.headers.get('content-type') || '').split(';')[0].trim();
+  const len = Number(r?.headers.get('content-length') || 0);
+  if (!r || !r.ok || !/^(image|video|audio)\//.test(type) || !r.body) return sendJson(res, 502, { error: 'Não consegui baixar esse arquivo.' });
+  if (len > MEDIA_MAX_BYTES) return sendJson(res, 502, { error: 'Arquivo grande demais.' });
 
-  const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }[type.split(';')[0]] || 'jpg';
-  const name = `${safeName(params.get('name'))}.${ext}`;
+  const name = `${safeName(params.get('name'))}.${MEDIA_EXT[type] || type.split('/')[1].replace(/\W/g, '') || 'bin'}`;
   const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
   res.writeHead(200, {
     'content-type': type,
-    'content-length': buf.length,
+    ...(len ? { 'content-length': len } : {}),
     'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`,
     'cache-control': 'no-store',
   });
-  res.end(buf);
+  Readable.fromWeb(r.body).on('error', () => res.destroy()).pipe(res);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -399,11 +475,11 @@ const server = http.createServer(async (req, res) => {
   try {
     if (pathname === '/health') return sendJson(res, 200, { ok: true, running, queued: queue.length });
 
-    if (pathname === '/api/image' && req.method === 'GET') return serveImage(res, searchParams);
+    if ((pathname === '/api/media' || pathname === '/api/image') && req.method === 'GET') return serveMedia(req, res, searchParams);
 
     if (pathname === '/api/info' && req.method === 'POST') {
       const url = normalizeUrl((await readJson(req)).url);
-      if (!url) return sendJson(res, 400, { error: 'Isso não parece um link do YouTube.' });
+      if (!url) return sendJson(res, 400, { error: 'Esse site ainda não é suportado.' });
       try {
         const info = await getInfo(url);
         if (info.isLive) return sendJson(res, 400, { error: 'Lives ao vivo não dá pra converter.' });
@@ -416,8 +492,8 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/jobs' && req.method === 'POST') {
       const body = await readJson(req);
       const url = normalizeUrl(body.url);
-      if (!url) return sendJson(res, 400, { error: 'Isso não parece um link do YouTube.' });
-      if (isChannelUrl(url)) return sendJson(res, 400, { error: 'Link de canal não tem vídeo pra converter.' });
+      if (!url) return sendJson(res, 400, { error: 'Esse site ainda não é suportado.' });
+      if (isProfileUrl(url)) return sendJson(res, 400, { error: 'Link de perfil não tem vídeo pra converter.' });
       const kind = ['mp4', 'mp3', 'wav'].includes(body.kind) ? body.kind : null;
       if (!kind) return sendJson(res, 400, { error: 'Formato inválido.' });
       let quality = null;
