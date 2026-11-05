@@ -218,6 +218,11 @@
   .empty { text-align: center; padding: 18px 8px 8px; font-size: 14px; }
   .empty svg { display: block; margin: 0 auto 10px; color: var(--mut); opacity: .6; }
   footer { text-align: center; font-size: 13px; }
+  .alert { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 16px 18px; border-radius: 22px; background: color-mix(in srgb, var(--err) 12%, var(--card)); color: var(--ink); box-shadow: var(--shadow); animation: rise .6s cubic-bezier(.22,1,.36,1) both; }
+  .alert .ico { width: 38px; height: 38px; border-radius: 12px; background: color-mix(in srgb, var(--err) 18%, transparent); color: var(--err); display: flex; align-items: center; justify-content: center; flex: none; }
+  .alert p { margin: 0; flex: 1 1 240px; font-size: 14px; }
+  .alert p strong { font-weight: 600; }
+  .alert .k { flex: none; }
 
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
@@ -236,6 +241,12 @@
       <svg id="themeIco" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"></svg>
     </button>
   </header>
+
+  <div class="alert" id="ytAlert" hidden role="status">
+    <span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 8v5M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg></span>
+    <p><strong>O login do YouTube caiu.</strong> YouTube e músicas (Spotify, Deezer, Apple Music) ficam fora até renovar. O resto continua funcionando.</p>
+    <a class="k" href="/renovar">Renovar agora</a>
+  </div>
 
   <div class="layout">
     <div class="col">
@@ -417,6 +428,13 @@ $('#theme').addEventListener('click', () => {
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintTheme);
 paintTheme();
 
+// ---------- aviso do login do YouTube ----------
+async function checkYt() {
+  try { $('#ytAlert').hidden = (await (await fetch('/api/status')).json()).youtube; } catch {}
+}
+checkYt();
+setInterval(checkYt, 5 * 60_000);
+
 // ---------- buscar ----------
 let seq = 0;
 async function lookup(url) {
@@ -444,6 +462,7 @@ async function lookup(url) {
   } catch (e) {
     if (my !== seq) return;
     state.url = '';
+    checkYt();
     $('#formErr').textContent = e.message;
     $('#formErr').hidden = false;
   } finally {

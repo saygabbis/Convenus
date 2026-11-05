@@ -70,6 +70,37 @@ function ytLoggedIn() {
   }
 }
 
+// Saúde do login: o arquivo pode ainda ter SID e mesmo assim o Google ter derrubado a sessão,
+// então também conta o último "confirme que não é um robô" depois do último sucesso.
+const ytState = { lastOkAt: 0, lastBotAt: 0 };
+const ytHealthy = () => ytLoggedIn() && !(ytState.lastBotAt > ytState.lastOkAt);
+
+// Uma sessão do YouTube por vez: dois yt-dlp com o mesmo cookies.txt regravam tokens um por cima
+// do outro, o Google vê token reaproveitado e desloga a conta.
+const ytLock = { busy: false, waiters: [] };
+const ytAcquire = () => new Promise((r) => { if (!ytLock.busy) { ytLock.busy = true; r(); } else ytLock.waiters.push(r); });
+function ytRelease() {
+  const next = ytLock.waiters.shift();
+  if (next) next();
+  else ytLock.busy = false;
+}
+async function withYt(url, fn) {
+  if (!isYouTube(url)) return fn();
+  await ytAcquire();
+  try {
+    return await fn();
+  } finally {
+    ytRelease();
+  }
+}
+const isYouTubeJob = (job) => job.mode === 'search' || isYouTube(job.url);
+
+// Código da página /renovar: gerado uma vez, só legível pela Gabbis (lê pelo SSH).
+const ADMIN_TOKEN_FILE = path.join(__dirname, 'admin.token');
+if (!fs.existsSync(ADMIN_TOKEN_FILE)) fs.writeFileSync(ADMIN_TOKEN_FILE, `${crypto.randomBytes(12).toString('base64url')}\n`, { mode: 0o600 });
+const ADMIN_TOKEN = fs.readFileSync(ADMIN_TOKEN_FILE, 'utf8').trim();
+const renewTries = new Map(); // ip -> [timestamps]
+
 function platformOf(url) {
   const host = new URL(url).hostname.replace(/^(www|m|mobile|old|vm|vt)\./, '');
   if (/^music\.youtube\.com$/i.test(new URL(url).hostname)) return 'YouTube Music';
@@ -83,7 +114,9 @@ function baseArgs(url) {
   // Logado, o YouTube aceita a VPS direto, e um IP fixo segura a sessão por mais tempo
   // (o IP do WARP muda e o Google acaba deslogando). O WARP fica de reserva pra quando não há login.
   if (PROXY && isYouTube(url) && !ytLoggedIn()) args.push('--proxy', PROXY);
-  if (fs.existsSync(COOKIES)) args.push('--cookies', COOKIES);
+  // Os cookies só vão pro YouTube: o yt-dlp regrava o arquivo no fim, e qualquer outro processo
+  // escrevendo nele faria o Google ver token velho e derrubar a sessão.
+  if (isYouTube(url) && fs.existsSync(COOKIES)) args.push('--cookies', COOKIES);
   return args;
 }
 
@@ -102,6 +135,7 @@ function normalizeUrl(raw) {
 function friendlyError(stderr) {
   const s = String(stderr || '');
   if (/confirm you.re not a bot|Sign in to confirm/i.test(s)) {
+    ytState.lastBotAt = Date.now();
     return ytLoggedIn()
       ? 'O YouTube bloqueou a VPS ("confirme que não é um robô"). Tenta de novo daqui a pouco.'
       : 'O login da conta do YouTube caiu. Precisa exportar cookies novos da conta descartável.';
@@ -161,7 +195,7 @@ async function thumbOptions(id) {
 }
 
 async function getChannel(url) {
-  const raw = await runCapture([...baseArgs(url), '-J', '--flat-playlist', '--playlist-items', '0', '--', url]);
+  const raw = await withYt(url, () => runCapture([...baseArgs(url), '-J', '--flat-playlist', '--playlist-items', '0', '--', url]));
   const j = JSON.parse(raw);
   const thumbs = j.thumbnails || [];
   const pick = (id, fallback) => (thumbs.find((t) => t.id === id) || fallback() || {}).url || null;
@@ -188,7 +222,7 @@ async function getInfo(url) {
 
 // yt-dlp -J → um item "nativo" por vídeo/áudio (playlist = vários, com o índice pro --playlist-items).
 async function ytdlpItems(url) {
-  const j = JSON.parse(await runCapture([...baseArgs(url), '-J', '--', url]));
+  const j = JSON.parse(await withYt(url, () => runCapture([...baseArgs(url), '-J', '--', url])));
   const entries = j._type === 'playlist' && Array.isArray(j.entries) ? j.entries.filter(Boolean) : [j];
   if (!entries.length) throw new Error('Não achei nenhum vídeo nesse link.');
   const items = entries.map((e, i) => {
@@ -211,6 +245,7 @@ async function ytdlpItems(url) {
     };
   });
   const first = entries[0];
+  if (isYouTube(url)) ytState.lastOkAt = Date.now();
   return {
     id: j.id || first.id,
     title: j.title || first.title || '',
@@ -319,10 +354,15 @@ function pump() {
 function finishJob(job, code, stderr) {
   running--;
   job.proc = null;
+  if (job.ytLocked) {
+    job.ytLocked = false;
+    ytRelease();
+  }
   if (job.status === 'canceled') {
     fs.rmSync(job.dir, { recursive: true, force: true });
   } else if (code === 0 && job.file && fs.existsSync(job.file)) {
     job.status = 'done';
+    if (isYouTubeJob(job)) ytState.lastOkAt = Date.now();
     job.phase = 'Pronto';
     job.percent = 100;
     job.size = fs.statSync(job.file).size;
@@ -362,12 +402,19 @@ function startDirectJob(job) {
   p.on('close', (code) => finishJob(job, code, stderr));
 }
 
-function startJob(job) {
+async function startJob(job) {
   running++;
   job.status = 'running';
   job.phase = 'Baixando';
   fs.mkdirSync(job.dir, { recursive: true });
   if (job.mode === 'direct') return startDirectJob(job);
+  if (isYouTubeJob(job)) {
+    job.phase = 'Esperando a vez no YouTube';
+    await ytAcquire();
+    job.ytLocked = true;
+    if (job.status === 'canceled') return finishJob(job, 1, '');
+    job.phase = 'Baixando';
+  }
 
   const p = spawn(YTDLP, jobArgs(job), { stdio: ['ignore', 'pipe', 'pipe'] });
   job.proc = p;
@@ -457,12 +504,12 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-function readJson(req) {
+function readJson(req, max = 10_000) {
   return new Promise((resolve, reject) => {
     let data = '';
     req.on('data', (c) => {
       data += c;
-      if (data.length > 10_000) req.destroy();
+      if (data.length > max) req.destroy();
     });
     req.on('end', () => {
       try {
@@ -537,11 +584,59 @@ async function serveMedia(req, res, params) {
   Readable.fromWeb(r.body).on('error', () => res.destroy()).pipe(res);
 }
 
+// Troca o cookies.txt do YouTube pela página /renovar e testa na hora.
+async function renewCookies(req, res) {
+  const ip = req.headers['x-real-ip'] || req.socket.remoteAddress;
+  const now = Date.now();
+  const tries = (renewTries.get(ip) || []).filter((t) => now - t < 15 * 60_000);
+  if (tries.length >= 5) return sendJson(res, 429, { error: 'Muitas tentativas. Espera uns 15 minutos.' });
+  tries.push(now);
+  renewTries.set(ip, tries);
+
+  let body;
+  try {
+    body = await readJson(req, 400_000);
+  } catch {
+    return sendJson(res, 400, { error: 'Arquivo inválido ou grande demais.' });
+  }
+  const given = Buffer.from(String(body.token || '').trim());
+  const real = Buffer.from(ADMIN_TOKEN);
+  if (given.length !== real.length || !crypto.timingSafeEqual(given, real)) return sendJson(res, 403, { error: 'Código errado.' });
+
+  // Só as linhas do YouTube/Google: o resto do navegador não interessa e não fica guardado.
+  const lines = String(body.content || '').split(/\r?\n/).filter((l) => /^#(?!HttpOnly_)|^\s*$/.test(l)
+    || /^(#HttpOnly_)?\.?(youtube\.com|google\.com)\t/.test(l));
+  const text = lines.join('\n');
+  if (!/\t(LOGIN_INFO|SID)\t/.test(text) || !/youtube\.com\t/.test(text)) {
+    return sendJson(res, 400, { error: 'Esse arquivo não tem o login do YouTube. Exporta logado em youtube.com, na janela anônima.' });
+  }
+  const content = `# Netscape HTTP Cookie File\n${text.replace(/^# Netscape HTTP Cookie File\n?/, '')}\n`;
+  fs.writeFileSync(COOKIES, content, { mode: 0o600 });
+  fs.writeFileSync(path.join(__dirname, 'cookies.master.txt'), content, { mode: 0o600 });
+  infoCache.clear();
+
+  try {
+    await withYt('https://www.youtube.com/', () => runCapture([...baseArgs('https://www.youtube.com/'), '--simulate', '--print', 'title', '--', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ']));
+    ytState.lastOkAt = Date.now();
+    renewTries.delete(ip);
+    console.log('[cookies] renovados pela página /renovar e testados: ok');
+    return sendJson(res, 200, { ok: true, message: 'Login renovado e testado. O YouTube voltou a funcionar!' });
+  } catch (e) {
+    return sendJson(res, 200, { ok: false, message: `Salvei os cookies, mas o teste falhou: ${e.message}` });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const { pathname, searchParams } = new URL(req.url, 'http://x');
 
   try {
     if (pathname === '/health') return sendJson(res, 200, { ok: true, running, queued: queue.length });
+
+    if (pathname === '/api/status') return sendJson(res, 200, { youtube: ytHealthy() });
+
+    if (pathname === '/renovar') return serveStatic(req, res, '/renovar.html');
+
+    if (pathname === '/api/cookies' && req.method === 'POST') return renewCookies(req, res);
 
     if ((pathname === '/api/media' || pathname === '/api/image') && req.method === 'GET') return serveMedia(req, res, searchParams);
 
@@ -611,6 +706,8 @@ const server = http.createServer(async (req, res) => {
         } else if (job.status === 'running' && job.proc) {
           job.status = 'canceled';
           job.proc.kill('SIGTERM');
+        } else if (job.status === 'running') {
+          job.status = 'canceled'; // ainda esperando a vez: o startJob encerra quando chegar
         }
         return sendJson(res, 200, publicJob(job));
       }
