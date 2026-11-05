@@ -22,6 +22,15 @@ const JOB_TTL_MS = Number(process.env.JOB_TTL_MIN || 60) * 60_000;
 const INFO_TTL_MS = 10 * 60_000;
 
 const MP3_BITRATES = ['128', '192', '256', '320'];
+const THUMBS = [
+  { file: 'maxresdefault', label: 'Máxima', size: '1280×720' },
+  { file: 'sddefault', label: 'SD', size: '640×480' },
+  { file: 'hqdefault', label: 'HQ', size: '480×360' },
+  { file: 'mqdefault', label: 'MQ', size: '320×180' },
+];
+// Só baixa imagem desses hosts (evita usar o servidor como proxy aberto).
+const IMAGE_HOSTS = new Set(['i.ytimg.com', 'yt3.googleusercontent.com', 'yt3.ggpht.com']);
+const IMAGE_MAX_BYTES = 25 * 1024 * 1024;
 const YT_HOSTS = /^(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com)$/i;
 
 const jobs = new Map();
@@ -76,9 +85,49 @@ function runCapture(args) {
   });
 }
 
+function isChannelUrl(url) {
+  const { hostname, pathname } = new URL(url);
+  return !/youtu\.be$/i.test(hostname) && /^\/(@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+)(\/[^/]*)?\/?$/.test(pathname);
+}
+
+async function thumbOptions(id) {
+  const checks = await Promise.all(THUMBS.map(async (t) => {
+    try {
+      const r = await fetch(`https://i.ytimg.com/vi/${id}/${t.file}.jpg`, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+      return r.ok ? t : null;
+    } catch {
+      return null;
+    }
+  }));
+  return checks.filter(Boolean).map((t) => ({ ...t, url: `https://i.ytimg.com/vi/${id}/${t.file}.jpg` }));
+}
+
+async function getChannel(url) {
+  const raw = await runCapture([...baseArgs(), '-J', '--flat-playlist', '--playlist-items', '0', '--', url]);
+  const j = JSON.parse(raw);
+  const thumbs = j.thumbnails || [];
+  const pick = (id, fallback) => (thumbs.find((t) => t.id === id) || fallback() || {}).url || null;
+  const widest = (filter) => thumbs.filter(filter).sort((a, b) => (b.width || 0) - (a.width || 0))[0];
+  return {
+    type: 'channel',
+    id: j.channel_id || j.id,
+    title: j.channel || j.title || j.uploader_id,
+    handle: j.uploader_id || '',
+    followers: j.channel_follower_count || 0,
+    avatar: pick('avatar_uncropped', () => widest((t) => t.width && t.width === t.height)),
+    banner: pick('banner_uncropped', () => widest((t) => t.width && t.width > t.height)),
+  };
+}
+
 async function getInfo(url) {
   const hit = infoCache.get(url);
   if (hit && Date.now() - hit.at < INFO_TTL_MS) return hit.info;
+
+  if (isChannelUrl(url)) {
+    const info = await getChannel(url);
+    infoCache.set(url, { at: Date.now(), info });
+    return info;
+  }
 
   const raw = await runCapture([...baseArgs(), '-J', '--', url]);
   const j = JSON.parse(raw);
@@ -91,6 +140,7 @@ async function getInfo(url) {
   ].sort((a, b) => b - a);
 
   const info = {
+    type: 'video',
     id: j.id,
     title: j.title,
     uploader: j.uploader || j.channel || '',
@@ -98,6 +148,7 @@ async function getInfo(url) {
     thumbnail: j.thumbnail || `https://i.ytimg.com/vi/${j.id}/hqdefault.jpg`,
     isLive: Boolean(j.is_live),
     heights,
+    thumbs: await thumbOptions(j.id),
   };
   infoCache.set(url, { at: Date.now(), info });
   return info;
@@ -311,11 +362,44 @@ function serveFile(req, res, job) {
   fs.createReadStream(job.file).pipe(res);
 }
 
+function safeName(s) {
+  return String(s || 'imagem').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim().slice(0, 150) || 'imagem';
+}
+
+async function serveImage(res, params) {
+  let u;
+  try {
+    u = new URL(params.get('u') || '');
+  } catch {
+    return sendJson(res, 400, { error: 'Link de imagem inválido.' });
+  }
+  if (u.protocol !== 'https:' || !IMAGE_HOSTS.has(u.hostname)) return sendJson(res, 400, { error: 'Host não permitido.' });
+
+  const r = await fetch(u, { signal: AbortSignal.timeout(20_000) }).catch(() => null);
+  const type = r?.headers.get('content-type') || '';
+  if (!r || !r.ok || !type.startsWith('image/')) return sendJson(res, 502, { error: 'Não consegui baixar essa imagem.' });
+  const buf = Buffer.from(await r.arrayBuffer());
+  if (buf.length > IMAGE_MAX_BYTES) return sendJson(res, 502, { error: 'Imagem grande demais.' });
+
+  const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }[type.split(';')[0]] || 'jpg';
+  const name = `${safeName(params.get('name'))}.${ext}`;
+  const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  res.writeHead(200, {
+    'content-type': type,
+    'content-length': buf.length,
+    'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+    'cache-control': 'no-store',
+  });
+  res.end(buf);
+}
+
 const server = http.createServer(async (req, res) => {
-  const { pathname } = new URL(req.url, 'http://x');
+  const { pathname, searchParams } = new URL(req.url, 'http://x');
 
   try {
     if (pathname === '/health') return sendJson(res, 200, { ok: true, running, queued: queue.length });
+
+    if (pathname === '/api/image' && req.method === 'GET') return serveImage(res, searchParams);
 
     if (pathname === '/api/info' && req.method === 'POST') {
       const url = normalizeUrl((await readJson(req)).url);
@@ -333,6 +417,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const url = normalizeUrl(body.url);
       if (!url) return sendJson(res, 400, { error: 'Isso não parece um link do YouTube.' });
+      if (isChannelUrl(url)) return sendJson(res, 400, { error: 'Link de canal não tem vídeo pra converter.' });
       const kind = ['mp4', 'mp3', 'wav'].includes(body.kind) ? body.kind : null;
       if (!kind) return sendJson(res, 400, { error: 'Formato inválido.' });
       let quality = null;

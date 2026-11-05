@@ -3,8 +3,8 @@
   "short_name": "Convert",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f0d16",
-  "theme_color": "#0f0d16",
+  "background_color": "#e9edf2",
+  "theme_color": "#e9edf2",
   "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }],
   "share_target": {
     "action": "/",

@@ -4,173 +4,303 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>GabbisConvert</title>
-<meta name="description" content="YouTube pra MP4, MP3 e WAV. Sem propaganda.">
-<meta name="theme-color" content="#0f0d16" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#f6f4fb" media="(prefers-color-scheme: light)">
+<meta name="description" content="YouTube pra MP4, MP3 e WAV, capas, avatares e banners. Sem propaganda.">
+<meta name="theme-color" content="#e9edf2">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+  try { const t = localStorage.getItem('gc-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+</script>
 <style>
   :root {
-    --bg: #f6f4fb;
-    --surface: #ffffff;
-    --surface-2: #efebf7;
-    --text: #1b1726;
-    --muted: #6b6580;
-    --border: #e0daec;
-    --accent: #8b5cf6;
-    --accent-2: #ec4899;
-    --accent-text: #ffffff;
-    --ok: #16a34a;
-    --err: #dc2626;
-    --shadow: 0 10px 30px -12px rgb(60 30 120 / .18);
+    --page: #e9edf2;
+    --card: #f5f7fa;
+    --fill: #e9edf2;
+    --fill-hover: #ffffff;
+    --ink: #3b414d;
+    --mut: #646b78;
+    --ac: #f2734f;
+    --ac-text: #c2461f;
+    --ac-soft: #fde4dc;
+    --cta: #c94a24;
+    --cta-ink: #ffffff;
+    --ok: #2f8f63;
+    --err: #b8382e;
+    --shadow: 0 1px 2px rgb(30 40 60 / .04), 0 12px 32px -18px rgb(30 40 60 / .18);
+    color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0f0d16;
-      --surface: #1a1724;
-      --surface-2: #241f33;
-      --text: #f1eef8;
-      --muted: #a39cb8;
-      --border: #2f2942;
-      --accent: #a78bfa;
-      --accent-2: #f472b6;
-      --accent-text: #160f24;
-      --ok: #4ade80;
-      --err: #f87171;
-      --shadow: 0 10px 30px -12px rgb(0 0 0 / .6);
+    :root:not([data-theme="light"]) {
+      --page: #1b1e25; --card: #23272f; --fill: #2c313b; --fill-hover: #353b47;
+      --ink: #e7e9ee; --mut: #9ea5b2; --ac: #f2734f; --ac-text: #ff9a7a; --ac-soft: #4a2c25;
+      --cta: #f2734f; --cta-ink: #1b1e25; --ok: #5fcf98; --err: #ff8a80;
+      --shadow: 0 1px 2px rgb(0 0 0 / .2), 0 14px 34px -18px rgb(0 0 0 / .6);
+      color-scheme: dark;
     }
   }
+  :root[data-theme="dark"] {
+    --page: #1b1e25; --card: #23272f; --fill: #2c313b; --fill-hover: #353b47;
+    --ink: #e7e9ee; --mut: #9ea5b2; --ac: #f2734f; --ac-text: #ff9a7a; --ac-soft: #4a2c25;
+    --cta: #f2734f; --cta-ink: #1b1e25; --ok: #5fcf98; --err: #ff8a80;
+    --shadow: 0 1px 2px rgb(0 0 0 / .2), 0 14px 34px -18px rgb(0 0 0 / .6);
+    color-scheme: dark;
+  }
+
   * { box-sizing: border-box; }
   html, body { margin: 0; }
   body {
-    background: var(--bg);
-    color: var(--text);
-    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--page);
+    color: var(--ink);
+    font: 15px/1.5 "Poppins", system-ui, -apple-system, "Segoe UI", sans-serif;
     min-height: 100dvh;
     -webkit-tap-highlight-color: transparent;
+    transition: background .3s, color .3s;
   }
-  .wrap { max-width: 560px; margin: 0 auto; padding: 28px 16px calc(40px + env(safe-area-inset-bottom)); }
-  header { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
-  header svg { width: 34px; height: 34px; flex: none; }
-  h1 { font-size: 22px; margin: 0; letter-spacing: -.02em; }
-  h1 span {
-    background: linear-gradient(90deg, var(--accent), var(--accent-2));
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .sub { color: var(--muted); font-size: 13px; margin: 0; }
-
-  .card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
-    padding: 16px; box-shadow: var(--shadow); margin-bottom: 14px;
-  }
-  .input-row { display: flex; gap: 8px; }
-  input[type=url] {
-    flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; outline: none;
-  }
-  input[type=url]:focus { border-color: var(--accent); }
-  button {
-    font: inherit; font-weight: 600; border: 0; border-radius: 12px; cursor: pointer;
-    padding: 12px 16px; color: var(--text); background: var(--surface-2);
-    transition: transform .08s, opacity .15s;
-  }
-  button:active { transform: scale(.97); }
-  button:disabled { opacity: .5; cursor: default; }
-  .primary { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: var(--accent-text); }
-  .full { width: 100%; padding: 14px; font-size: 17px; }
-
-  .video { display: flex; gap: 12px; align-items: center; }
-  .video img { width: 128px; aspect-ratio: 16/9; object-fit: cover; border-radius: 10px; flex: none; background: var(--surface-2); }
-  .video .t { font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .video .m { color: var(--muted); font-size: 13px; margin-top: 2px; }
-
-  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: var(--surface-2); padding: 4px; border-radius: 14px; margin: 16px 0 12px; }
-  .tabs button { background: transparent; padding: 10px; }
-  .tabs button[aria-selected=true] { background: var(--surface); box-shadow: 0 1px 4px rgb(0 0 0 / .12); }
-  .label { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-  .chips button { padding: 9px 13px; font-size: 14px; border: 1px solid var(--border); background: transparent; }
-  .chips button[aria-pressed=true] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
-  .chips small { color: var(--muted); font-weight: 500; margin-left: 3px; }
-  .note { color: var(--muted); font-size: 12px; margin: -6px 0 14px; }
-
-  .job { display: grid; gap: 8px; }
-  .job + .job { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
-  .job .row { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
-  .job .name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .badge { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--surface-2); color: var(--muted); flex: none; }
-  .bar { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
-  .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .4s; }
-  .bar.busy i { width: 100% !important; animation: pulse 1.2s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: .45; } }
-  .status { font-size: 13px; color: var(--muted); }
-  .status.err { color: var(--err); }
-  .actions { display: flex; gap: 8px; }
-  .actions a, .actions button { flex: 1; text-align: center; text-decoration: none; padding: 10px; font-size: 14px; border-radius: 10px; }
-  .actions a { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: var(--accent-text); font-weight: 600; }
-
-  .msg { padding: 10px 12px; border-radius: 10px; font-size: 14px; margin-top: 10px; }
-  .msg.err { background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); }
-  .spinner { width: 18px; height: 18px; border: 2.5px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: -4px; margin-right: 8px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 32px 16px calc(40px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 28px; }
+  .mut { color: var(--mut); }
   [hidden] { display: none !important; }
-  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 24px; }
-  @media (max-width: 400px) { .video img { width: 104px; } }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand svg { flex: none; }
+  .brand h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+  .brand p { margin: 0; font-size: 13px; }
+
+  .layout { display: grid; gap: 28px; align-items: start; }
+  .col { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+  @media (min-width: 1000px) {
+    .wrap { padding: 52px 40px 56px; gap: 40px; }
+    .layout { grid-template-columns: minmax(0, 1fr) 400px; gap: 40px; }
+    .brand h1 { font-size: 24px; }
+    .brand p { font-size: 14px; }
+  }
+
+  .card { background: var(--card); border-radius: 26px; box-shadow: var(--shadow); animation: rise .7s cubic-bezier(.22,1,.36,1) both; transition: background .3s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(16px); } }
+
+  .k {
+    font: inherit; font-weight: 500; color: var(--ink); background: var(--fill); border: 0; cursor: pointer;
+    border-radius: 14px; padding: 11px 16px; text-decoration: none; text-align: center;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background .25s, color .25s, transform .3s cubic-bezier(.34,1.56,.64,1);
+  }
+  .k:hover { background: var(--fill-hover); color: var(--ac-text); transform: translateY(-2px); }
+  .k:active { transform: translateY(0) scale(.98); }
+  .k[aria-pressed="true"], .k[aria-selected="true"] { background: var(--ac-soft); color: var(--ac-text); transform: none; }
+  .k:disabled { opacity: .5; cursor: default; transform: none; }
+  .k small { color: var(--mut); font-weight: 400; font-size: 12px; }
+  .k:focus-visible, .cta:focus-visible, input:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+  .icon-btn { width: 46px; height: 46px; padding: 0; flex: none; }
+
+  .cta {
+    font: inherit; font-weight: 600; font-size: 16px; width: 100%; padding: 17px; border: 0; border-radius: 18px; cursor: pointer;
+    background: var(--cta); color: var(--cta-ink); display: flex; align-items: center; justify-content: center; gap: 10px;
+    transition: transform .3s cubic-bezier(.34,1.56,.64,1), filter .25s;
+  }
+  .cta:hover { transform: translateY(-2px); filter: brightness(1.06); }
+  .cta:active { transform: scale(.99); }
+  .cta:disabled { opacity: .6; cursor: default; transform: none; }
+
+  /* entrada */
+  .search { padding: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .field { flex: 1 1 240px; min-width: 0; display: flex; align-items: center; gap: 10px; background: var(--fill); border-radius: 16px; padding: 0 16px; }
+  .field input { flex: 1; min-width: 0; font: inherit; font-size: 15px; color: var(--ink); background: transparent; border: 0; outline: none; padding: 15px 0; }
+  .field input::placeholder { color: var(--mut); }
+  .search .k { padding: 15px 22px; flex: 0 0 auto; }
+  @media (max-width: 520px) { .search .k { flex: 1 1 100%; } }
+  .loading { display: flex; align-items: center; gap: 10px; padding: 4px 6px 2px; font-size: 14px; width: 100%; }
+  .spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--fill); border-top-color: var(--ac); animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .msg-err { width: 100%; padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); font-size: 14px; }
+
+  /* vídeo */
+  .video { padding: 20px; }
+  .vhead { display: flex; flex-direction: column; gap: 18px; }
+  .thumb { position: relative; border-radius: 18px; overflow: hidden; background: var(--fill); aspect-ratio: 16 / 9; width: 100%; flex: none; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .dur { position: absolute; right: 10px; bottom: 10px; font-size: 12px; font-weight: 500; padding: 3px 9px; border-radius: 8px; background: rgb(0 0 0 / .55); color: #fff; }
+  .vtitle { margin: 0 0 4px; font-size: 18px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+  @media (min-width: 640px) {
+    .video { padding: 30px; }
+    .vhead { flex-direction: row; align-items: center; gap: 26px; }
+    .thumb { width: 296px; }
+    .vtitle { font-size: 21px; }
+  }
+
+  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 26px 0 22px; }
+  .tabs .k { flex-direction: column; gap: 6px; padding: 16px 6px; border-radius: 18px; font-size: 15px; }
+  .label { font-size: 13px; margin: 0 0 12px; }
+  .chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
+  @media (min-width: 640px) { .chips { display: flex; flex-wrap: wrap; gap: 12px; } .chips .k { padding: 11px 18px; } }
+  .note { font-size: 12px; margin: -12px 0 20px; }
+  .thumbs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  @media (min-width: 640px) { .thumbs { grid-template-columns: repeat(4, minmax(0, 1fr)); } .thumbs .k { flex-direction: column; gap: 0; } }
+  .section-gap { margin-top: 28px; }
+
+  /* canal */
+  .channel { padding: 12px; overflow: hidden; }
+  .banner { border-radius: 18px; background: var(--fill); aspect-ratio: 6.2 / 1; min-height: 80px; overflow: hidden; }
+  .banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .chead { display: flex; align-items: flex-end; gap: 14px; margin: -30px 12px 0; position: relative; }
+  .avatar { width: 76px; height: 76px; border-radius: 50%; background: var(--card); padding: 5px; flex: none; }
+  .avatar img, .avatar span { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; background: var(--fill); }
+  .cname { font-weight: 600; font-size: 17px; overflow-wrap: anywhere; }
+  .cbtns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 20px 12px 12px; }
+
+  /* conversões */
+  .jobs { padding: 22px; }
+  .jobs-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; gap: 10px; }
+  .jobs-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
+  .jobs-head .k { padding: 8px 14px; font-size: 13px; }
+  .job-list { display: flex; flex-direction: column; gap: 20px; }
+  .job { display: flex; flex-direction: column; gap: 10px; animation: rise .5s cubic-bezier(.22,1,.36,1) both; }
+  .job-row { display: flex; align-items: center; gap: 12px; }
+  .job-ico { width: 40px; height: 40px; border-radius: 12px; background: var(--fill); display: flex; align-items: center; justify-content: center; flex: none; color: var(--mut); }
+  .job-ico.ok { color: var(--ok); }
+  .job-ico.err { color: var(--err); }
+  .job-ico.run { color: var(--ac); }
+  .job-main { flex: 1; min-width: 0; }
+  .job-name { font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job-sub { font-size: 12px; color: var(--mut); }
+  .job-sub.err { color: var(--err); }
+  .job-pct { font-size: 13px; font-weight: 600; color: var(--ac-text); flex: none; }
+  .job .k.icon-btn { width: 42px; height: 42px; border-radius: 50%; }
+  .track { height: 8px; border-radius: 99px; background: var(--fill); margin-left: 52px; }
+  .track i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--ac); position: relative; transition: width .6s cubic-bezier(.22,1,.36,1); }
+  .track i::after { content: ""; position: absolute; right: -7px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%; background: var(--ac); box-shadow: 0 0 0 4px var(--card); animation: pulse 1.6s ease-in-out infinite; }
+  .track.busy i { width: 100% !important; animation: breathe 1.4s ease-in-out infinite; }
+  .track.busy i::after { display: none; }
+  @keyframes pulse { 50% { transform: scale(.75); } }
+  @keyframes breathe { 50% { opacity: .4; } }
+  .empty { text-align: center; padding: 18px 8px 8px; font-size: 14px; }
+  .empty svg { display: block; margin: 0 auto 10px; color: var(--mut); opacity: .6; }
+  footer { text-align: center; font-size: 13px; }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#g)"/><path d="M26 20v24l18-12z" fill="#fff"/></svg>
-    <div>
-      <h1>Gabbis<span>Convert</span></h1>
-      <p class="sub">YouTube → MP4, MP3 e WAV. Sem propaganda.</p>
-    </div>
-  </header>
-
-  <form class="card" id="form" autocomplete="off">
-    <div class="input-row">
-      <input type="url" id="url" placeholder="Cola o link do YouTube" inputmode="url" required>
-      <button type="button" id="paste" title="Colar">Colar</button>
-    </div>
-    <div id="loading" class="status" style="margin-top:12px" hidden><span class="spinner"></span>Buscando o vídeo…</div>
-    <div id="formErr" class="msg err" hidden></div>
-  </form>
-
-  <section class="card" id="pick" hidden>
-    <div class="video">
-      <img id="thumb" alt="">
-      <div style="min-width:0">
-        <div class="t" id="title"></div>
-        <div class="m" id="meta"></div>
+    <div class="brand">
+      <svg width="50" height="50" viewBox="0 0 52 52" aria-hidden="true"><rect width="52" height="52" rx="16" fill="#f2734f"/><path d="M26 13v18M18 23l8 8 8-8M17 38h18" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div>
+        <h1>GabbisConvert</h1>
+        <p class="mut">MP4, MP3, WAV, capas e avatares — sem propaganda</p>
       </div>
     </div>
+    <button class="k icon-btn" id="theme" type="button" aria-label="Trocar tema">
+      <svg id="themeIco" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"></svg>
+    </button>
+  </header>
 
-    <div class="tabs" role="tablist">
-      <button type="button" role="tab" data-kind="mp4" aria-selected="true">MP4</button>
-      <button type="button" role="tab" data-kind="mp3" aria-selected="false">MP3</button>
-      <button type="button" role="tab" data-kind="wav" aria-selected="false">WAV</button>
+  <div class="layout">
+    <div class="col">
+      <form class="card search" id="form" autocomplete="off">
+        <label for="url" class="sr">Link do YouTube</label>
+        <div class="field">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="mut" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+          <input type="url" id="url" placeholder="Cola um link de vídeo ou de canal" inputmode="url" required>
+        </div>
+        <button class="k" type="button" id="paste">Colar</button>
+        <div class="loading mut" id="loading" hidden><span class="spin"></span>Buscando no YouTube…</div>
+        <div class="msg-err" id="formErr" hidden></div>
+      </form>
+
+      <section class="card video" id="video" hidden>
+        <div class="vhead">
+          <div class="thumb"><img id="vThumb" alt="" referrerpolicy="no-referrer"><span class="dur" id="vDur"></span></div>
+          <div style="min-width:0">
+            <h2 class="vtitle" id="vTitle"></h2>
+            <div class="mut" id="vMeta"></div>
+          </div>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Formato">
+          <button class="k" type="button" role="tab" data-kind="mp4">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9v6l5-3z"/></svg>MP4
+          </button>
+          <button class="k" type="button" role="tab" data-kind="mp3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>MP3
+          </button>
+          <button class="k" type="button" role="tab" data-kind="wav">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12h1M7 8v8M11 4v16M15 7v10M19 10v4"/></svg>WAV
+          </button>
+        </div>
+
+        <p class="label mut" id="qLabel">Qualidade</p>
+        <div class="chips" id="chips"></div>
+        <p class="note mut" id="note" hidden></p>
+
+        <button class="cta" type="button" id="go">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
+          <span id="goLabel">Converter</span>
+        </button>
+
+        <div class="section-gap" id="thumbsWrap" hidden>
+          <p class="label mut">Baixar capa</p>
+          <div class="thumbs" id="thumbs"></div>
+        </div>
+      </section>
+
+      <section class="card channel" id="channel" hidden>
+        <div class="banner" id="cBanner"></div>
+        <div class="chead">
+          <div class="avatar" id="cAvatar"></div>
+          <div style="padding-bottom:4px;min-width:0">
+            <div class="cname" id="cName"></div>
+            <div class="mut" style="font-size:13px" id="cMeta"></div>
+          </div>
+        </div>
+        <div class="cbtns">
+          <a class="k" id="cAvatarBtn" download>Baixar avatar</a>
+          <a class="k" id="cBannerBtn" download>Baixar banner</a>
+        </div>
+      </section>
     </div>
 
-    <p class="label" id="qLabel">Qualidade</p>
-    <div class="chips" id="chips"></div>
-    <p class="note" id="note" hidden></p>
-
-    <button type="button" class="primary full" id="go">Converter</button>
-  </section>
-
-  <section class="card" id="jobsCard" hidden>
-    <p class="label" style="margin-bottom:12px">Conversões</p>
-    <div id="jobs"></div>
-  </section>
-
-  <footer>Os arquivos ficam disponíveis por 1 hora.</footer>
+    <div class="col">
+      <section class="card jobs" style="animation-delay:.1s">
+        <div class="jobs-head">
+          <h2>Conversões</h2>
+          <button class="k" type="button" id="clear" hidden>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>Limpar
+          </button>
+        </div>
+        <div class="job-list" id="jobs"></div>
+        <div class="empty mut" id="empty">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
+          Nada por aqui ainda.<br>Cola um link pra começar.
+        </div>
+      </section>
+      <footer class="mut">Os arquivos somem em 1 hora.</footer>
+    </div>
+  </div>
 </div>
 
 <script>
 const $ = (s) => document.querySelector(s);
 const state = { info: null, url: '', kind: 'mp4', quality: { mp4: null, mp3: '320' }, jobs: [] };
 const RES_NAMES = { 4320: '8K', 2160: '4K', 1440: '2K', 1080: 'Full HD', 720: 'HD' };
+const ACTIVE = ['queued', 'running'];
+const ICONS = {
+  moon: '<path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  ok: '<path d="M5 12l5 5L20 7"/>',
+  err: '<path d="M12 8v5M12 17h.01"/>',
+  run: '<path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/>',
+  wait: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
+  dl: '<path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+};
+const svg = (name, size = 18, sw = 2.2) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+
+function store(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
+function load(key, def) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch { return def; } }
 
 function fmtDur(s) {
   s = Math.round(s || 0);
@@ -181,9 +311,11 @@ function fmtSize(b) {
   if (!b) return '';
   const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
   while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
-  return `${b.toFixed(i > 1 ? 1 : 0)} ${u[i]}`;
+  return `${b.toFixed(i > 1 ? 1 : 0).replace('.', ',')} ${u[i]}`;
 }
+function fmtCount(n) { return new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(n); }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function imgLink(url, name) { return `/api/image?u=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`; }
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
@@ -192,29 +324,51 @@ async function api(path, opts = {}) {
   return j;
 }
 
-// ---------- buscar vídeo ----------
-let lookupSeq = 0;
+// ---------- tema ----------
+function isDark() {
+  const t = document.documentElement.dataset.theme;
+  return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+}
+function paintTheme() {
+  $('#themeIco').innerHTML = ICONS[isDark() ? 'sun' : 'moon'];
+  document.querySelector('meta[name=theme-color]').content = isDark() ? '#1b1e25' : '#e9edf2';
+}
+$('#theme').addEventListener('click', () => {
+  const next = isDark() ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('gc-theme', next); } catch {}
+  paintTheme();
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintTheme);
+paintTheme();
+
+// ---------- buscar ----------
+let seq = 0;
 async function lookup(url) {
   url = url.trim();
   if (!url || url === state.url) return;
-  const seq = ++lookupSeq;
+  const my = ++seq;
   state.url = url;
   $('#formErr').hidden = true;
-  $('#pick').hidden = true;
+  $('#video').hidden = true;
+  $('#channel').hidden = true;
   $('#loading').hidden = false;
   try {
     const info = await api('/api/info', { method: 'POST', body: JSON.stringify({ url }) });
-    if (seq !== lookupSeq) return;
+    if (my !== seq) return;
     state.info = info;
-    state.quality.mp4 = info.heights.includes(1080) ? 1080 : info.heights[0];
-    renderPick();
+    if (info.type === 'channel') renderChannel();
+    else {
+      state.quality.mp4 = info.heights.includes(1080) ? 1080 : info.heights[0];
+      renderVideo();
+    }
   } catch (e) {
-    if (seq !== lookupSeq) return;
+    if (my !== seq) return;
     state.url = '';
     $('#formErr').textContent = e.message;
     $('#formErr').hidden = false;
   } finally {
-    if (seq === lookupSeq) $('#loading').hidden = true;
+    if (my === seq) $('#loading').hidden = true;
   }
 }
 
@@ -229,13 +383,14 @@ $('#paste').addEventListener('click', async () => {
   } catch { $('#url').focus(); }
 });
 
-// ---------- escolher formato ----------
-function renderPick() {
+// ---------- vídeo ----------
+function renderVideo() {
   const i = state.info;
-  $('#thumb').src = i.thumbnail;
-  $('#title').textContent = i.title;
-  $('#meta').textContent = [i.uploader, fmtDur(i.duration)].filter(Boolean).join(' · ');
-  document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', b.dataset.kind === state.kind));
+  $('#vThumb').src = i.thumbnail;
+  $('#vDur').textContent = fmtDur(i.duration);
+  $('#vTitle').textContent = i.title;
+  $('#vMeta').textContent = i.uploader;
+  document.querySelectorAll('.tabs .k').forEach((b) => b.setAttribute('aria-selected', b.dataset.kind === state.kind));
 
   const chips = $('#chips');
   const note = $('#note');
@@ -243,36 +398,60 @@ function renderPick() {
   if (state.kind === 'mp4') {
     $('#qLabel').textContent = 'Resolução';
     chips.innerHTML = i.heights.map((h) =>
-      `<button type="button" data-q="${h}" aria-pressed="${h === state.quality.mp4}">${h}p${RES_NAMES[h] ? `<small>${RES_NAMES[h]}</small>` : ''}</button>`).join('');
+      `<button class="k" type="button" data-q="${h}" aria-pressed="${h === state.quality.mp4}">${h}p${RES_NAMES[h] ? ` <small>${RES_NAMES[h]}</small>` : ''}</button>`).join('');
     if (state.quality.mp4 > 1080) {
-      note.textContent = 'Acima de 1080p o YouTube só entrega VP9/AV1: toca no celular e no VLC, mas alguns editores antigos podem não abrir.';
+      note.textContent = 'Acima de 1080p o YouTube só entrega VP9/AV1: toca no celular e no VLC, mas editores antigos podem não abrir.';
       note.hidden = false;
     }
+    $('#goLabel').textContent = `Converter pra MP4 ${state.quality.mp4}p`;
   } else if (state.kind === 'mp3') {
-    $('#qLabel').textContent = 'Bitrate';
+    $('#qLabel').textContent = 'Qualidade';
     chips.innerHTML = ['320', '256', '192', '128'].map((q) =>
-      `<button type="button" data-q="${q}" aria-pressed="${q === state.quality.mp3}">${q} kbps${q === '320' ? '<small>máx</small>' : ''}</button>`).join('');
+      `<button class="k" type="button" data-q="${q}" aria-pressed="${q === state.quality.mp3}">${q} kbps</button>`).join('');
+    $('#goLabel').textContent = 'Converter pra MP3';
   } else {
     $('#qLabel').textContent = 'Qualidade';
-    chips.innerHTML = '<button type="button" aria-pressed="true">Sem perda<small>PCM 16-bit</small></button>';
+    chips.innerHTML = '<button class="k" type="button" aria-pressed="true">Sem perda <small>PCM 16-bit</small></button>';
     note.textContent = 'WAV é pesado: uns 10 MB por minuto.';
     note.hidden = false;
+    $('#goLabel').textContent = 'Converter pra WAV';
   }
-  $('#pick').hidden = false;
+
+  const thumbs = i.thumbs || [];
+  $('#thumbsWrap').hidden = thumbs.length === 0;
+  $('#thumbs').innerHTML = thumbs.map((t) =>
+    `<a class="k" href="${esc(imgLink(t.url, `${i.title} - capa ${t.label}`))}" download>${esc(t.label)} <small>${esc(t.size)}</small></a>`).join('');
+
+  $('#video').hidden = false;
 }
 
 document.querySelector('.tabs').addEventListener('click', (e) => {
-  const b = e.target.closest('button[data-kind]');
+  const b = e.target.closest('[data-kind]');
   if (!b) return;
   state.kind = b.dataset.kind;
-  renderPick();
+  renderVideo();
 });
 $('#chips').addEventListener('click', (e) => {
-  const b = e.target.closest('button[data-q]');
+  const b = e.target.closest('[data-q]');
   if (!b) return;
   state.quality[state.kind] = state.kind === 'mp4' ? Number(b.dataset.q) : b.dataset.q;
-  renderPick();
+  renderVideo();
 });
+
+// ---------- canal ----------
+function renderChannel() {
+  const c = state.info;
+  $('#cName').textContent = c.title;
+  $('#cMeta').textContent = [c.handle, c.followers ? `${fmtCount(c.followers)} inscritos` : ''].filter(Boolean).join(' · ');
+  $('#cBanner').innerHTML = c.banner ? `<img src="${esc(c.banner)}" alt="" referrerpolicy="no-referrer">` : '';
+  $('#cAvatar').innerHTML = c.avatar ? `<img src="${esc(c.avatar)}" alt="" referrerpolicy="no-referrer">` : '<span></span>';
+  const av = $('#cAvatarBtn'), bn = $('#cBannerBtn');
+  av.hidden = !c.avatar;
+  bn.hidden = !c.banner;
+  if (c.avatar) av.href = imgLink(c.avatar, `${c.title} - avatar`);
+  if (c.banner) bn.href = imgLink(c.banner, `${c.title} - banner`);
+  $('#channel').hidden = false;
+}
 
 // ---------- conversões ----------
 $('#go').addEventListener('click', async () => {
@@ -283,8 +462,8 @@ $('#go').addEventListener('click', async () => {
       method: 'POST',
       body: JSON.stringify({ url: state.url, kind: state.kind, quality: state.quality[state.kind], title: state.info.title }),
     });
-    job.thumb = state.info.thumbnail;
     state.jobs.unshift(job);
+    saveJobs();
     renderJobs();
     poll();
   } catch (e) {
@@ -296,31 +475,41 @@ $('#go').addEventListener('click', async () => {
 
 function jobLabel(j) {
   if (j.kind === 'mp4') return `MP4 ${j.quality}p`;
-  if (j.kind === 'mp3') return `MP3 ${j.quality}k`;
+  if (j.kind === 'mp3') return `MP3 ${j.quality}`;
   return 'WAV';
 }
 
+function saveJobs() {
+  store('gc-jobs', state.jobs.filter((j) => j.status !== 'expired').slice(0, 30));
+}
+
 function renderJobs() {
-  $('#jobsCard').hidden = state.jobs.length === 0;
-  $('#jobs').innerHTML = state.jobs.map((j) => {
-    const busy = j.status === 'running' && (j.percent >= 100 || j.percent === 0);
-    let status = esc(j.phase);
-    if (j.status === 'running' && j.percent > 0 && j.percent < 100) {
-      status += ` · ${j.percent.toFixed(0)}%${j.speed ? ' · ' + esc(j.speed) : ''}${j.eta ? ' · falta ' + esc(j.eta) : ''}`;
+  const list = state.jobs;
+  $('#empty').hidden = list.length > 0;
+  $('#clear').hidden = !list.some((j) => !ACTIVE.includes(j.status));
+  $('#jobs').innerHTML = list.map((j) => {
+    const active = ACTIVE.includes(j.status);
+    const busy = j.status === 'queued' || (j.status === 'running' && (j.percent >= 100 || j.percent === 0));
+    let ico = 'wait', cls = '', sub = `${jobLabel(j)} · ${esc(j.phase)}`;
+    if (j.status === 'running') {
+      ico = 'run'; cls = 'run';
+      if (j.percent > 0 && j.percent < 100) sub = `${jobLabel(j)} · ${j.speed ? esc(j.speed) : esc(j.phase)}${j.eta ? ' · falta ' + esc(j.eta) : ''}`;
     }
-    if (j.status === 'done') status = `Pronto · ${fmtSize(j.size)}`;
-    if (j.status === 'error') status = esc(j.error);
-    if (j.status === 'canceled') status = 'Cancelado';
-    if (j.status === 'expired') status = 'Expirou';
-    const pct = j.status === 'done' ? 100 : j.percent;
+    if (j.status === 'done') { ico = 'ok'; cls = 'ok'; sub = `${jobLabel(j)} · ${fmtSize(j.size)}`; }
+    if (j.status === 'error') { ico = 'err'; cls = 'err'; sub = esc(j.error); }
+    if (j.status === 'canceled') { ico = 'x'; sub = `${jobLabel(j)} · cancelado`; }
+    if (j.status === 'expired') { ico = 'wait'; sub = `${jobLabel(j)} · expirou`; }
+    const pct = j.status === 'running' && j.percent > 0 && j.percent < 100 ? `<span class="job-pct">${j.percent.toFixed(0)}%</span>` : '';
+    const action = j.status === 'done'
+      ? `<a class="k icon-btn" href="/api/jobs/${j.id}/file" download aria-label="Baixar">${svg('dl')}</a>`
+      : active ? `<button class="k icon-btn" type="button" data-cancel="${j.id}" aria-label="Cancelar">${svg('x', 16)}</button>` : '';
     return `<div class="job">
-      <div class="row"><span class="name">${esc(j.title)}</span><span class="badge">${jobLabel(j)}</span></div>
-      ${['queued', 'running'].includes(j.status) ? `<div class="bar${busy || j.status === 'queued' ? ' busy' : ''}"><i style="width:${pct}%"></i></div>` : ''}
-      <div class="status${j.status === 'error' ? ' err' : ''}">${status}</div>
-      <div class="actions">
-        ${j.status === 'done' ? `<a href="/api/jobs/${j.id}/file" download>Baixar</a>` : ''}
-        ${['queued', 'running'].includes(j.status) ? `<button type="button" data-cancel="${j.id}">Cancelar</button>` : ''}
+      <div class="job-row">
+        <div class="job-ico ${cls}">${svg(ico)}</div>
+        <div class="job-main"><div class="job-name">${esc(j.title)}</div><div class="job-sub${j.status === 'error' ? ' err' : ''}">${sub}</div></div>
+        ${pct}${action}
       </div>
+      ${active ? `<div class="track${busy ? ' busy' : ''}"><i style="width:${j.percent || 0}%"></i></div>` : ''}
     </div>`;
   }).join('');
 }
@@ -332,21 +521,31 @@ $('#jobs').addEventListener('click', async (e) => {
   await api(`/api/jobs/${b.dataset.cancel}`, { method: 'DELETE' }).catch(() => {});
 });
 
+$('#clear').addEventListener('click', () => {
+  state.jobs = state.jobs.filter((j) => ACTIVE.includes(j.status));
+  saveJobs();
+  renderJobs();
+});
+
 let polling = false;
 async function poll() {
   if (polling) return;
   polling = true;
-  while (state.jobs.some((j) => ['queued', 'running'].includes(j.status))) {
-    for (const j of state.jobs.filter((j) => ['queued', 'running'].includes(j.status))) {
+  while (state.jobs.some((j) => ACTIVE.includes(j.status) || j.recheck)) {
+    for (const j of state.jobs.filter((j) => ACTIVE.includes(j.status) || j.recheck)) {
       try {
         const upd = await api(`/api/jobs/${j.id}`);
         const wasDone = j.status === 'done';
+        const fresh = !j.recheck;
         Object.assign(j, upd);
-        if (!wasDone && j.status === 'done') autoDownload(j);
+        delete j.recheck;
+        if (fresh && !wasDone && j.status === 'done') autoDownload(j);
       } catch {
         j.status = 'expired';
+        delete j.recheck;
       }
     }
+    saveJobs();
     renderJobs();
     await new Promise((r) => setTimeout(r, 1000));
   }
@@ -362,11 +561,15 @@ function autoDownload(j) {
   a.remove();
 }
 
-// Aceita ?url=... (e o "compartilhar" do Android quando instalado como app)
+// Lista salva no navegador: reconfere no servidor o que ainda existe.
+state.jobs = load('gc-jobs', []).map((j) => ({ ...j, recheck: true }));
+renderJobs();
+if (state.jobs.length) poll();
+
+// Aceita ?url=... (e o "Compartilhar" do Android quando instalado como app)
 const qs = new URLSearchParams(location.search);
-const shared = qs.get('url') || qs.get('text') || '';
-const m = shared.match(/https?:\/\/\S+/);
-if (m) { $('#url').value = m[0]; lookup(m[0]); history.replaceState(null, '', '/'); }
+const shared = (qs.get('url') || qs.get('text') || '').match(/https?:\/\/\S+/);
+if (shared) { $('#url').value = shared[0]; lookup(shared[0]); history.replaceState(null, '', '/'); }
 </script>
 </body>
 </html>
