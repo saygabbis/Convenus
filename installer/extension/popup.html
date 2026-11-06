@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convenus</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="18" fill="#f2734f"/><path d="M11 34a21 21 0 0 1 42 0L32 53z" fill="#fff"/><path d="M32 53L17.5 21M32 53L24.5 15.5M32 53V13M32 53l7.5-37.5M32 53l14.5-32" fill="none" stroke="#f2734f" stroke-width="2.6" stroke-linecap="round"/></svg>
+      <div>
+        <strong>Convenus</strong>
+        <span>Sync automático</span>
+      </div>
+    </div>
+  </header>
+
+  <section class="card">
+    <div class="row"><span class="dot" id="dotSite"></span><span id="txtSite">Site…</span></div>
+    <div class="row"><span class="dot" id="dotYt"></span><span id="txtYt">YouTube…</span></div>
+    <div class="row"><span class="dot" id="dotSync"></span><span id="txtSync">Sync…</span></div>
+    <p class="mut" id="alerts" hidden></p>
+  </section>
+
+  <section class="card">
+    <label class="toggle">
+      <input type="checkbox" id="autoSync" checked>
+      Enviar cookies YT automaticamente
+    </label>
+    <button id="btnSync" type="button">Sincronizar agora</button>
+    <button id="btnPoll" type="button" class="secondary">Atualizar status</button>
+    <button id="btnOpenYt" type="button" class="secondary">Abrir YouTube neste perfil</button>
+  </section>
+
+  <section class="card tip">
+    <strong>Conta principal + descartável</strong>
+    <p class="mut">Ela manda <strong>só cookies de youtube.com</strong> — nunca google.com (Gmail/trabalho ficam fora).</p>
+    <p class="mut">No YouTube deste navegador, deixe a <strong>conta descartável</strong> ativa. Perfil separado ainda é o mais seguro, mas não é obrigatório pra isolar o Google do trabalho.</p>
+  </section>
+
+  <p class="msg" id="msg" hidden></p>
+  <p class="hint">Opera GX: ícone do perfil → Adicionar → nomeie “Convenus” → carregue a extensão nesse perfil. Celular: Kiwi com a mesma pasta, ou só o site.</p>
+  <script src="popup.js"></script>
+</body>
+</html>

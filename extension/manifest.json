@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Convenus Admin",
+  "description": "Extensão privada para monitoramento, autenticação e renovação autorizada do Convenus.",
+  "version": "1.2.0",
+  "action": {
+    "default_title": "Convenus",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "alarms",
+    "storage",
+    "notifications",
+    "cookies"
+  ],
+  "host_permissions": [
+    "https://convert.saygabbis.cloud/*",
+    "http://127.0.0.1:5180/*",
+    "https://www.youtube.com/*",
+    "https://youtube.com/*",
+    "https://*.youtube.com/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ]
+}

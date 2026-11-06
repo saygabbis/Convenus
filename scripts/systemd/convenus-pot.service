@@ -1,0 +1,18 @@
+[Unit]
+Description=Convenus bgutil PO token provider
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/convenus/pot-provider/server
+ExecStart=/usr/bin/node build/main.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=append:/opt/convenus/logs/pot.log
+StandardError=append:/opt/convenus/logs/pot.log
+
+[Install]
+WantedBy=multi-user.target

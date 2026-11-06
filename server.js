@@ -10,6 +10,10 @@ const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
 const providers = require('./providers');
+const log = require('./lib/logger');
+const { withRetry, isTransient } = require('./lib/retry');
+const { createAuth } = require('./lib/auth');
+const { collectHealth } = require('./lib/health');
 
 const PORT = Number(process.env.PORT || 5180);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -21,7 +25,12 @@ const DOWNLOAD_DIR = path.resolve(process.env.DOWNLOAD_DIR || path.join(__dirnam
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_RUNNING = Number(process.env.MAX_RUNNING || 2);
 const JOB_TTL_MS = Number(process.env.JOB_TTL_MIN || 60) * 60_000;
+const JOB_TIMEOUT_MS = Number(process.env.JOB_TIMEOUT_MIN || 45) * 60_000;
 const INFO_TTL_MS = 10 * 60_000;
+const INFO_TIMEOUT_MS = Number(process.env.INFO_TIMEOUT_SEC || 90) * 1000;
+const STARTED_AT = Date.now();
+const SITE_ORIGIN = process.env.SITE_ORIGIN || 'https://convert.saygabbis.cloud';
+const ACCESS_CLEAN_MS = 2 * 60 * 60_000;
 
 const MP3_BITRATES = ['128', '192', '256', '320'];
 const THUMBS = [
@@ -54,8 +63,19 @@ const infoCache = new Map();
 const queue = [];
 let running = 0;
 
+// Limpa órfãos de runs anteriores; jobs vivem só em memória.
 fs.rmSync(DOWNLOAD_DIR, { recursive: true, force: true });
 fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true, mode: 0o700 });
+fs.mkdirSync(path.join(__dirname, 'logs'), { recursive: true });
+
+process.on('unhandledRejection', (err) => {
+  log.error('unhandledRejection', { error: String(err?.stack || err) });
+});
+process.on('uncaughtException', (err) => {
+  log.error('uncaughtException', { error: String(err?.stack || err) });
+  // Não encerra na hora: o supervisor (systemd/start-vps) reinicia se o processo ficar inconsistente.
+});
 
 // ---------- yt-dlp ----------
 
@@ -84,63 +104,88 @@ function ytRelease() {
   if (next) next();
   else ytLock.busy = false;
 }
-// Cópia boa dos cookies: atualizada depois de cada uso do YouTube que deu certo e restaurada
-// sozinha quando o arquivo perde o login (o yt-dlp às vezes regrava o arquivo sem ele, mesmo
-// com a sessão ainda válida no Google). Só existe um arquivo ativo por vez, então não há duas
-// cópias girando tokens em paralelo.
-const COOKIES_MASTER = path.join(__dirname, 'cookies.master.txt');
-const RESTORE_COOLDOWN_MS = 10 * 60_000;
-let lastRestoreAt = 0;
-const hasLogin = (f) => {
-  try {
-    return /\t(LOGIN_INFO|SID)\t/.test(fs.readFileSync(f, 'utf8'));
-  } catch {
-    return false;
-  }
-};
-function backupCookies() {
-  if (!hasLogin(COOKIES)) return;
-  fs.copyFileSync(COOKIES, COOKIES_MASTER);
-  fs.chmodSync(COOKIES_MASTER, 0o600);
+// O cookies.txt é sempre o único estado da sessão: o Google troca os tokens a cada uso e o
+// yt-dlp grava os novos no arquivo. Nunca volta uma cópia antiga: token já trocado chegando de
+// novo é sinal de sessão roubada pro Google, e ele derruba o login da conta inteira.
+let loginWasOk = ytLoggedIn();
+function noteLogin() {
+  const ok = ytLoggedIn();
+  if (loginWasOk && !ok) console.log(`[cookies] o Google encerrou a sessão do YouTube (${new Date().toISOString()}); renove pela /renovar`);
+  loginWasOk = ok;
 }
-function restoreCookies() {
-  if (Date.now() - lastRestoreAt < RESTORE_COOLDOWN_MS || !hasLogin(COOKIES_MASTER)) return false;
-  lastRestoreAt = Date.now();
-  fs.copyFileSync(COOKIES_MASTER, COOKIES);
-  fs.chmodSync(COOKIES, 0o600);
-  ytState.lastBotAt = 0;
-  console.log(`[cookies] login sumiu do arquivo; restaurei a cópia boa (${new Date().toISOString()})`);
-  return true;
-}
-const loginTrouble = (text) => /confirm you.re not a bot|Sign in to confirm|login da conta|não é um robô/i.test(String(text || ''));
 
 async function withYt(url, fn) {
   if (!isYouTube(url)) return fn();
   await ytAcquire();
   try {
-    if (!ytLoggedIn()) restoreCookies();
-    try {
-      const out = await fn();
-      backupCookies();
-      return out;
-    } catch (e) {
-      // Uma nova tentativa com a cópia boa; se falhar de novo, o erro segue pro usuário.
-      if (!loginTrouble(e.message) || !restoreCookies()) throw e;
-      const out = await fn();
-      backupCookies();
-      return out;
-    }
+    return await fn();
   } finally {
+    noteLogin();
     ytRelease();
   }
 }
 const isYouTubeJob = (job) => job.mode === 'search' || isYouTube(job.url);
 
-// Código da página /renovar: gerado uma vez, só legível pela Gabbis (lê pelo SSH).
+// Segredo de enrollment (bootstrap): gerado uma vez, só legível no servidor (SSH). Nunca no git.
 const ADMIN_TOKEN_FILE = path.join(__dirname, 'admin.token');
-if (!fs.existsSync(ADMIN_TOKEN_FILE)) fs.writeFileSync(ADMIN_TOKEN_FILE, `${crypto.randomBytes(12).toString('base64url')}\n`, { mode: 0o600 });
+if (!fs.existsSync(ADMIN_TOKEN_FILE)) fs.writeFileSync(ADMIN_TOKEN_FILE, `${crypto.randomBytes(18).toString('base64url')}\n`, { mode: 0o600 });
 const ADMIN_TOKEN = fs.readFileSync(ADMIN_TOKEN_FILE, 'utf8').trim();
+const auth = createAuth({ rootDir: __dirname, adminToken: ADMIN_TOKEN });
 const renewTries = new Map(); // ip -> [timestamps]
+const loginTries = new Map();
+const usedJti = new Map(); // anti-replay curto para jti de access já vistos em logout
+
+function clientIp(req) {
+  return String(req.headers['x-real-ip'] || req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || req.socket.remoteAddress
+    || '';
+}
+
+function rateLimit(map, key, { limit = 5, windowMs = 15 * 60_000 } = {}) {
+  const now = Date.now();
+  const tries = (map.get(key) || []).filter((t) => now - t < windowMs);
+  if (tries.length >= limit) return false;
+  tries.push(now);
+  map.set(key, tries);
+  return true;
+}
+
+function bearer(req) {
+  const h = String(req.headers.authorization || '');
+  const m = /^Bearer\s+(.+)$/i.exec(h);
+  return m ? m[1].trim() : '';
+}
+
+function requireAdmin(req, res, scope) {
+  const token = bearer(req);
+  if (!token) {
+    sendJson(res, 401, { error: 'Autenticação necessária.' });
+    return null;
+  }
+  const session = auth.verifyAccess(token);
+  if (!session) {
+    sendJson(res, 401, { error: 'Sessão inválida ou expirada.' });
+    return null;
+  }
+  if (scope && !auth.hasScope(session, scope)) {
+    sendJson(res, 403, { error: 'Sem permissão para esta ação.' });
+    return null;
+  }
+  if (session.payload?.jti && usedJti.has(session.payload.jti)) {
+    sendJson(res, 401, { error: 'Token já utilizado/revogado.' });
+    return null;
+  }
+  auth.touch(session.device.id);
+  return session;
+}
+
+function setSecurityHeaders(res) {
+  res.setHeader('x-content-type-options', 'nosniff');
+  res.setHeader('referrer-policy', 'no-referrer');
+  res.setHeader('x-frame-options', 'DENY');
+  res.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('cross-origin-resource-policy', 'same-site');
+}
 
 function platformOf(url) {
   const host = new URL(url).hostname.replace(/^(www|m|mobile|old|vm|vt)\./, '');
@@ -177,7 +222,7 @@ function normalizeUrl(raw) {
 
 function friendlyError(stderr) {
   const s = String(stderr || '');
-  if (/confirm you.re not a bot|Sign in to confirm/i.test(s)) {
+  if (/confirm you.re not a bot/i.test(s)) {
     ytState.lastBotAt = Date.now();
     return ytLoggedIn()
       ? 'O YouTube bloqueou a VPS ("confirme que não é um robô"). Tenta de novo daqui a pouco.'
@@ -196,15 +241,25 @@ function friendlyError(stderr) {
   return last ? last.replace(/^ERROR:\s*(\[[^\]]+\]\s*)?/, '') : 'Deu erro na conversão.';
 }
 
-function runCapture(args) {
+function runCapture(args, timeoutMs = INFO_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const p = spawn(YTDLP, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
+    const timer = setTimeout(() => {
+      p.kill('SIGKILL');
+      reject(new Error('A consulta demorou demais e foi cancelada.'));
+    }, timeoutMs);
     p.stdout.on('data', (d) => (out += d));
     p.stderr.on('data', (d) => (err += d));
-    p.on('error', reject);
-    p.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(friendlyError(err)))));
+    p.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    p.on('close', (code) => {
+      clearTimeout(timer);
+      code === 0 ? resolve(out) : reject(new Error(friendlyError(err)));
+    });
   });
 }
 
@@ -451,9 +506,14 @@ function pump() {
 
 function finishJob(job, code, stderr) {
   running--;
+  if (job.timeout) {
+    clearTimeout(job.timeout);
+    job.timeout = null;
+  }
   job.proc = null;
   if (job.ytLocked) {
     job.ytLocked = false;
+    noteLogin();
     ytRelease();
   }
   if (job.status === 'canceled') {
@@ -487,6 +547,14 @@ function startDirectJob(job) {
     '-progress', 'pipe:1', '-nostats', job.file,
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
   job.proc = p;
+  job.timeout = setTimeout(() => {
+    if (job.status !== 'running' || !job.proc) return;
+    log.warn('job.timeout', { id: job.id, mode: 'direct' });
+    job.error = 'A conversão passou do tempo limite e foi cancelada.';
+    job.status = 'canceled';
+    job.proc.kill('SIGTERM');
+  }, JOB_TIMEOUT_MS);
+  if (job.timeout.unref) job.timeout.unref();
   let stderr = '';
   p.stdout.on('data', (d) => {
     const m = String(d).match(/out_time_us=(\d+)/g);
@@ -511,7 +579,6 @@ async function startJob(job) {
     await ytAcquire();
     job.ytLocked = true;
     if (job.status === 'canceled') return finishJob(job, 1, '');
-    if (!ytLoggedIn()) restoreCookies();
     job.phase = 'Baixando';
   }
   runYtdlpJob(job);
@@ -522,6 +589,15 @@ function runYtdlpJob(job) {
   job.proc = p;
   let stderr = '';
   let streams = 0;
+  job.timeout = setTimeout(() => {
+    if (job.status !== 'running' || !job.proc) return;
+    log.warn('job.timeout', { id: job.id, timeoutMs: JOB_TIMEOUT_MS });
+    job.error = 'A conversão passou do tempo limite e foi cancelada.';
+    job.status = 'canceled';
+    job.proc.kill(job.ytLocked ? 'SIGINT' : 'SIGTERM');
+    setTimeout(() => { try { job.proc?.kill('SIGKILL'); } catch {} }, 8_000).unref();
+  }, JOB_TIMEOUT_MS);
+  if (job.timeout.unref) job.timeout.unref();
 
   const onLine = (line) => {
     if (line.startsWith('@@P ')) {
@@ -562,18 +638,7 @@ function runYtdlpJob(job) {
     if (stderr.length > 20_000) stderr = stderr.slice(-20_000);
   });
 
-  p.on('close', (code) => {
-    // Login sumiu no meio: restaura a cópia boa e tenta de novo uma vez, ainda segurando a vez no YouTube.
-    if (code !== 0 && job.status !== 'canceled' && job.ytLocked && !job.retried && loginTrouble(stderr) && restoreCookies()) {
-      job.retried = true;
-      job.phase = 'Reconectando no YouTube';
-      job.percent = 0;
-      job.lastPct = 0;
-      return runYtdlpJob(job);
-    }
-    if (code === 0 && job.ytLocked) backupCookies();
-    finishJob(job, code, stderr);
-  });
+  p.on('close', (code) => finishJob(job, code, stderr));
 }
 
 function createJob({ mode = 'native', url, index = null, named = false, duration = 0, kind, quality, title }) {
@@ -642,7 +707,10 @@ function serveStatic(req, res, pathname) {
     res.writeHead(404).end('Not found');
     return;
   }
-  res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream' });
+  const headers = { 'content-type': MIME[path.extname(file)] || 'application/octet-stream' };
+  if (rel === 'sw.js') headers['service-worker-allowed'] = '/';
+  if (/\.(html|webmanifest|js)$/.test(rel) || rel === 'sw.js') headers['cache-control'] = 'no-cache';
+  res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
 }
 
@@ -697,14 +765,9 @@ async function serveMedia(req, res, params) {
   Readable.fromWeb(r.body).on('error', () => res.destroy()).pipe(res);
 }
 
-// Troca o cookies.txt do YouTube pela página /renovar e testa na hora.
+// Troca o cookies.txt do YouTube pela página /renovar (ou extensão) e testa na hora.
 async function renewCookies(req, res) {
-  const ip = req.headers['x-real-ip'] || req.socket.remoteAddress;
-  const now = Date.now();
-  const tries = (renewTries.get(ip) || []).filter((t) => now - t < 15 * 60_000);
-  if (tries.length >= 5) return sendJson(res, 429, { error: 'Muitas tentativas. Espera uns 15 minutos.' });
-  tries.push(now);
-  renewTries.set(ip, tries);
+  const ip = clientIp(req);
 
   let body;
   try {
@@ -712,43 +775,190 @@ async function renewCookies(req, res) {
   } catch {
     return sendJson(res, 400, { error: 'Arquivo inválido ou grande demais.' });
   }
-  const given = Buffer.from(String(body.token || '').trim());
-  const real = Buffer.from(ADMIN_TOKEN);
-  if (given.length !== real.length || !crypto.timingSafeEqual(given, real)) return sendJson(res, 403, { error: 'Código errado.' });
 
-  // Só as linhas do YouTube/Google: o resto do navegador não interessa e não fica guardado.
+  // Preferência: Bearer de dispositivo autorizado. Fallback: admin.token (enrollment / SSH).
+  const session = (() => {
+    const t = bearer(req);
+    return t ? auth.verifyAccess(t) : null;
+  })();
+  const okBearer = session && auth.hasScope(session, 'cookies:write');
+  const okBootstrap = auth.checkBootstrap(String(body.token || '').trim());
+  if (!okBearer && !okBootstrap) return sendJson(res, 403, { error: 'Código errado ou sessão sem permissão.' });
+  // Extensão autenticada sincroniza com frequência: rate limit só no bootstrap / anônimo.
+  if (!okBearer && !rateLimit(renewTries, ip, { limit: 5, windowMs: 15 * 60_000 })) {
+    return sendJson(res, 429, { error: 'Muitas tentativas. Espera uns 15 minutos.' });
+  }
+  if (okBearer) auth.touch(session.device.id);
+
+  // Só youtube.com — nunca google.com (evita gravar sessão da conta de trabalho/Gmail).
   const lines = String(body.content || '').split(/\r?\n/).filter((l) => /^#(?!HttpOnly_)|^\s*$/.test(l)
-    || /^(#HttpOnly_)?\.?(youtube\.com|google\.com)\t/.test(l));
+    || /^(#HttpOnly_)?\.?youtube\.com\t/.test(l));
   const text = lines.join('\n');
   if (!/\t(LOGIN_INFO|SID)\t/.test(text) || !/youtube\.com\t/.test(text)) {
-    return sendJson(res, 400, { error: 'Esse arquivo não tem o login do YouTube. Exporta logado em youtube.com, na janela anônima.' });
+    return sendJson(res, 400, { error: 'Esse arquivo não tem o login do YouTube. Entre em youtube.com com a conta descartável.' });
   }
   const content = `# Netscape HTTP Cookie File\n${text.replace(/^# Netscape HTTP Cookie File\n?/, '')}\n`;
-  fs.writeFileSync(COOKIES, content, { mode: 0o600 });
-  fs.writeFileSync(COOKIES_MASTER, content, { mode: 0o600 });
-  lastRestoreAt = 0;
+  // Espera a vez no YouTube: trocar o arquivo com um yt-dlp rodando faria ele gravar a sessão velha por cima.
+  await ytAcquire();
+  try {
+    fs.writeFileSync(COOKIES, content, { mode: 0o600 });
+  } finally {
+    ytRelease();
+  }
+  loginWasOk = true;
+  ytState.lastBotAt = 0;
   infoCache.clear();
+  log.audit('cookies.renew', { ip, deviceId: session?.device?.id || null, via: okBearer ? 'device' : 'bootstrap' });
 
   try {
-    await withYt('https://www.youtube.com/', () => runCapture([...baseArgs('https://www.youtube.com/'), '--simulate', '--print', 'title', '--', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ']));
+    await withRetry(
+      () => withYt('https://www.youtube.com/', () => runCapture([...baseArgs('https://www.youtube.com/'), '--simulate', '--print', 'title', '--', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'])),
+      { retries: 2, baseMs: 800, shouldRetry: isTransient, onRetry: (e, n) => log.warn('cookies.test.retry', { n, error: e.message }) },
+    );
     ytState.lastOkAt = Date.now();
     renewTries.delete(ip);
-    console.log('[cookies] renovados pela página /renovar e testados: ok');
+    log.info('cookies.renew.ok', { ip });
     return sendJson(res, 200, { ok: true, message: 'Login renovado e testado. O YouTube voltou a funcionar!' });
   } catch (e) {
     return sendJson(res, 200, { ok: false, message: `Salvei os cookies, mas o teste falhou: ${e.message}` });
   }
 }
 
+async function adminLogin(req, res) {
+  const ip = clientIp(req);
+  if (!rateLimit(loginTries, ip, { limit: 8, windowMs: 15 * 60_000 })) {
+    return sendJson(res, 429, { error: 'Muitas tentativas. Espera uns 15 minutos.' });
+  }
+  let body;
+  try {
+    body = await readJson(req, 4_000);
+  } catch {
+    return sendJson(res, 400, { error: 'JSON inválido.' });
+  }
+  try {
+    const out = auth.enroll({
+      adminSecret: String(body.token || '').trim(),
+      name: body.deviceName || body.name || 'Dispositivo',
+      userAgent: req.headers['user-agent'],
+      ip,
+    });
+    loginTries.delete(ip);
+    return sendJson(res, 200, { ok: true, ...out });
+  } catch (e) {
+    return sendJson(res, e.status || 403, { error: e.message || 'Falha no login.' });
+  }
+}
+
+async function adminRefresh(req, res) {
+  const ip = clientIp(req);
+  if (!rateLimit(loginTries, `refresh:${ip}`, { limit: 30, windowMs: 15 * 60_000 })) {
+    return sendJson(res, 429, { error: 'Muitas tentativas.' });
+  }
+  let body;
+  try {
+    body = await readJson(req, 4_000);
+  } catch {
+    return sendJson(res, 400, { error: 'JSON inválido.' });
+  }
+  try {
+    const out = auth.refresh({ refreshToken: String(body.refreshToken || '').trim(), ip });
+    return sendJson(res, 200, { ok: true, ...out });
+  } catch (e) {
+    return sendJson(res, e.status || 401, { error: e.message || 'Falha ao renovar sessão.' });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const { pathname, searchParams } = new URL(req.url, 'http://x');
+  setSecurityHeaders(res);
+
+  // Extensão privada (chrome-extension://) e PWA no mesmo domínio.
+  const origin = String(req.headers.origin || '');
+  if (origin === SITE_ORIGIN || /^chrome-extension:\/\//.test(origin) || /^moz-extension:\/\//.test(origin)) {
+    res.setHeader('access-control-allow-origin', origin);
+    res.setHeader('access-control-allow-methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('access-control-allow-headers', 'content-type, authorization');
+    res.setHeader('access-control-max-age', '600');
+    res.setHeader('vary', 'Origin');
+  }
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    return res.end();
+  }
 
   try {
-    if (pathname === '/health') return sendJson(res, 200, { ok: true, running, queued: queue.length });
+    if (pathname === '/health') {
+      const deep = searchParams.get('deep') === '1';
+      if (!deep) return sendJson(res, 200, { ok: true, running, queued: queue.length, uptimeSec: Math.round((Date.now() - STARTED_AT) / 1000) });
+      const session = requireAdmin(req, res, 'health:read');
+      if (!session) return undefined;
+      const report = await collectHealth({
+        ytdlpPath: YTDLP,
+        cookiesPath: COOKIES,
+        proxyUrl: PROXY,
+        ytHealthy,
+        running,
+        queued: queue.length,
+        startedAt: STARTED_AT,
+      });
+      return sendJson(res, report.ok ? 200 : 503, report);
+    }
 
-    if (pathname === '/api/status') return sendJson(res, 200, { youtube: ytHealthy() });
+    if (pathname === '/api/status') {
+      return sendJson(res, 200, {
+        youtube: ytHealthy(),
+        cookies: ytLoggedIn(),
+        uptimeSec: Math.round((Date.now() - STARTED_AT) / 1000),
+        running,
+        queued: queue.length,
+      });
+    }
 
-    if (pathname === '/renovar') return serveStatic(req, res, '/renovar.html');
+    if (pathname === '/api/admin/login' && req.method === 'POST') return adminLogin(req, res);
+    if (pathname === '/api/admin/refresh' && req.method === 'POST') return adminRefresh(req, res);
+
+    if (pathname === '/api/admin/session' && req.method === 'GET') {
+      const session = requireAdmin(req, res, 'status:read');
+      if (!session) return undefined;
+      return sendJson(res, 200, { ok: true, device: auth.publicDevice(session.device), scopes: session.scopes });
+    }
+
+    if (pathname === '/api/admin/devices' && req.method === 'GET') {
+      const session = requireAdmin(req, res, 'devices:read');
+      if (!session) return undefined;
+      return sendJson(res, 200, { ok: true, devices: auth.listDevices() });
+    }
+
+    if (pathname === '/api/admin/revoke' && req.method === 'POST') {
+      const session = requireAdmin(req, res, 'devices:revoke');
+      if (!session) return undefined;
+      let body = {};
+      try { body = await readJson(req, 4_000); } catch { return sendJson(res, 400, { error: 'JSON inválido.' }); }
+      const target = String(body.deviceId || session.device.id);
+      const all = Boolean(body.all);
+      if (session.payload?.jti) {
+        usedJti.set(session.payload.jti, Date.now());
+        setTimeout(() => usedJti.delete(session.payload.jti), ACCESS_CLEAN_MS).unref();
+      }
+      return sendJson(res, 200, auth.revoke({ deviceId: all ? null : target, byDeviceId: session.device.id, all }));
+    }
+
+    if (pathname === '/api/admin/health' && req.method === 'GET') {
+      const session = requireAdmin(req, res, 'health:read');
+      if (!session) return undefined;
+      const report = await collectHealth({
+        ytdlpPath: YTDLP,
+        cookiesPath: COOKIES,
+        proxyUrl: PROXY,
+        ytHealthy,
+        running,
+        queued: queue.length,
+        startedAt: STARTED_AT,
+      });
+      return sendJson(res, report.ok ? 200 : 503, report);
+    }
+
+    if (pathname === '/renovar' || pathname === '/admin') return serveStatic(req, res, '/renovar.html');
 
     if (pathname === '/api/cookies' && req.method === 'POST') return renewCookies(req, res);
 
@@ -819,7 +1029,9 @@ const server = http.createServer(async (req, res) => {
           job.finishedAt = Date.now();
         } else if (job.status === 'running' && job.proc) {
           job.status = 'canceled';
-          job.proc.kill('SIGTERM');
+          // SIGINT: o yt-dlp sai salvando os cookies que o Google acabou de trocar. Com SIGTERM ele
+          // morria sem salvar, e o próximo download mandava token velho e derrubava o login.
+          job.proc.kill(job.ytLocked ? 'SIGINT' : 'SIGTERM');
         } else if (job.status === 'running') {
           job.status = 'canceled'; // ainda esperando a vez: o startJob encerra quando chegar
         }
@@ -837,5 +1049,11 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Convenus em http://${HOST}:${PORT} (proxy: ${PROXY || 'nenhum'})`);
+  log.info('listen', { host: HOST, port: PORT, proxy: PROXY || null });
+});
+
+process.on('SIGTERM', () => {
+  log.info('shutdown', { signal: 'SIGTERM' });
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 8_000).unref();
 });

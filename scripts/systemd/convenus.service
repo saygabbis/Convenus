@@ -1,0 +1,31 @@
+[Unit]
+Description=Convenus site (Node)
+After=network-online.target convenus-warp.service convenus-pot.service
+Wants=network-online.target convenus-warp.service convenus-pot.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/convenus
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=5180
+Environment=SITE_ORIGIN=https://convert.saygabbis.cloud
+Environment=PATH=/home/USER/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+WatchdogSec=0
+KillSignal=SIGTERM
+TimeoutStopSec=20
+# Limites brandos em VPS 8 GB — evita um vazamento derrubar a máquina.
+MemoryMax=1500M
+TasksMax=256
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/convenus
+StandardOutput=append:/opt/convenus/logs/site.log
+StandardError=append:/opt/convenus/logs/site.log
+
+[Install]
+WantedBy=multi-user.target

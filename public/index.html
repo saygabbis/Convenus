@@ -842,6 +842,10 @@ if (state.jobs.length) poll();
 const qs = new URLSearchParams(location.search);
 const shared = (qs.get('url') || qs.get('text') || '').match(/https?:\/\/\S+/);
 if (shared) { $('#url').value = shared[0]; lookup(shared[0]); history.replaceState(null, '', '/'); }
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
 </script>
 </body>
 </html>

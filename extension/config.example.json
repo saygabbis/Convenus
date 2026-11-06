@@ -1,0 +1,7 @@
+{
+  "apiBase": "https://convert.saygabbis.cloud",
+  "adminToken": "COLE_O_ADMIN_TOKEN_AQUI",
+  "deviceName": "Convenus Ext",
+  "autoSyncCookies": true,
+  "syncMinutes": 2
+}

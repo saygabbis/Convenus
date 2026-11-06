@@ -1,6 +1,6 @@
 {
   "name": "convenus",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "YouTube -> MP4 / MP3 / WAV, sem propaganda (yt-dlp + ffmpeg).",
   "license": "MIT",
@@ -8,6 +8,9 @@
   "scripts": {
     "start": "node server.js",
     "start:vps": "bash scripts/start-vps.sh",
-    "setup": "bash scripts/setup.sh"
+    "setup": "bash scripts/setup.sh",
+    "install:systemd": "bash scripts/install-systemd.sh",
+    "test": "node --test test/*.test.js",
+    "check": "node --check server.js && node --check lib/auth.js && node --check lib/health.js && node --check lib/retry.js && node --check lib/logger.js"
   }
 }

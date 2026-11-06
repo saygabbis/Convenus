@@ -1,0 +1,8 @@
+[Unit]
+Description=Atualiza yt-dlp (Convenus)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/USER/.local/bin/yt-dlp -U
+Nice=10

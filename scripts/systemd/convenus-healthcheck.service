@@ -1,0 +1,8 @@
+[Unit]
+Description=Health check Convenus
+After=convenus.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/convenus/scripts/healthcheck.sh
+Nice=10

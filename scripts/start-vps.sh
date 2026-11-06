@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Sobe WARP (SOCKS 127.0.0.1:40000), PO token provider (127.0.0.1:4416) e o site (127.0.0.1:5180).
 # Cada um reinicia sozinho se cair. Ctrl+C derruba tudo.
+#
+# Preferível na VPS: sudo bash scripts/install-systemd.sh
+# (boot automático, limites de memória, healthcheck timer).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

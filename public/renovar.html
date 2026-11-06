@@ -3,10 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Renovar login · Convenus</title>
+<title>YouTube · Convenus</title>
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#e9edf2">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
@@ -21,7 +24,7 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; }
   body { background: var(--page); color: var(--ink); font: 15px/1.55 "Poppins", system-ui, sans-serif; min-height: 100dvh; }
-  .wrap { max-width: 560px; margin: 0 auto; padding: 32px 16px 48px; display: flex; flex-direction: column; gap: 24px; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 32px 16px calc(48px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 24px; }
   a { color: var(--ink); }
   .brand { display: flex; align-items: center; gap: 14px; text-decoration: none; }
   .brand h1 { margin: 0; font-size: 20px; font-weight: 600; }
@@ -30,24 +33,12 @@
   @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
   h2 { margin: 0 0 6px; font-size: 18px; font-weight: 600; }
   .mut { color: var(--mut); font-size: 14px; }
-  ol { margin: 12px 0 0; padding-left: 20px; font-size: 14px; color: var(--mut); }
-  ol li + li { margin-top: 6px; }
-  label { display: block; font-size: 13px; color: var(--mut); margin: 18px 0 8px; }
-  input[type=password] { width: 100%; font: inherit; color: var(--ink); background: var(--fill); border: 0; border-radius: 14px; padding: 14px 16px; outline: none; }
-  .drop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 26px 16px; border-radius: 18px; background: var(--fill); border: 2px dashed color-mix(in srgb, var(--mut) 40%, transparent); cursor: pointer; text-align: center; font-size: 14px; color: var(--mut); transition: border-color .2s, background .2s; }
-  .drop.on, .drop:hover { border-color: var(--ac); }
-  .drop strong { color: var(--ink); font-weight: 500; }
-  .drop input { display: none; }
-  button { font: inherit; font-weight: 600; font-size: 16px; width: 100%; margin-top: 20px; padding: 16px; border: 0; border-radius: 18px; cursor: pointer; background: var(--cta); color: var(--cta-ink); transition: transform .3s cubic-bezier(.34,1.56,.64,1), opacity .2s; }
-  button:hover { transform: translateY(-2px); }
-  button:disabled { opacity: .6; cursor: default; transform: none; }
-  input:focus-visible, button:focus-visible, .drop:focus-within { outline: 2px solid var(--ac); outline-offset: 2px; }
-  .msg { margin-top: 16px; padding: 12px 14px; border-radius: 14px; font-size: 14px; }
-  .msg.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
-  .msg.err { background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); }
   .status { display: flex; align-items: center; gap: 10px; font-size: 14px; }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--mut); flex: none; }
   .dot.ok { background: var(--ok); } .dot.err { background: var(--err); }
+  button { font: inherit; font-weight: 600; font-size: 16px; width: 100%; margin-top: 12px; padding: 16px; border: 0; border-radius: 18px; cursor: pointer; background: var(--cta); color: var(--cta-ink); }
+  button.secondary { background: color-mix(in srgb, var(--mut) 18%, transparent); color: var(--ink); }
+  a.cta { display: block; text-align: center; text-decoration: none; font-weight: 600; padding: 16px; border-radius: 18px; background: var(--cta); color: var(--cta-ink); margin-top: 12px; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -55,95 +46,37 @@
 <div class="wrap">
   <a class="brand" href="/">
     <svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="18" fill="#f2734f"/><path d="M11 34a21 21 0 0 1 42 0L32 53z" fill="#fff"/><path d="M32 53L17.5 21M32 53L24.5 15.5M32 53V13M32 53l7.5-37.5M32 53l14.5-32" fill="none" stroke="#f2734f" stroke-width="2.6" stroke-linecap="round"/></svg>
-    <div><h1>Convenus</h1><p>Renovar o login do YouTube</p></div>
+    <div><h1>Convenus</h1><p>Status do login YouTube</p></div>
   </a>
 
   <section class="card">
-    <div class="status"><span class="dot" id="dot"></span><span id="statusText">Conferindo o login…</span></div>
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">Conferindo…</span></div>
   </section>
 
-  <section class="card" style="animation-delay:.08s">
-    <h2>Mandar cookies novos</h2>
-    <p class="mut">Use sempre a conta descartável, nunca a sua principal.</p>
-    <ol>
-      <li>Abre uma janela anônima e entra no youtube.com com a conta descartável.</li>
-      <li>Abre um vídeo qualquer.</li>
-      <li>Na extensão <strong>Get cookies.txt LOCALLY</strong>, clica em <strong>Export</strong>.</li>
-      <li>Fecha a janela anônima <strong>sem sair da conta</strong>.</li>
-      <li>Sobe o arquivo aqui embaixo.</li>
-    </ol>
-
-    <form id="form" autocomplete="off">
-      <label for="token">Código de acesso</label>
-      <input type="password" id="token" required autocomplete="current-password" placeholder="O código do arquivo admin.token">
-      <label for="file">Arquivo de cookies</label>
-      <label class="drop" id="drop">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 20h14"/></svg>
-        <strong id="fileName">Escolher o cookies.txt</strong>
-        <span>ou arrasta ele pra cá</span>
-        <input type="file" id="file" accept=".txt,text/plain">
-      </label>
-      <button type="submit" id="send">Renovar e testar</button>
-    </form>
-    <div class="msg" id="msg" hidden></div>
+  <section class="card">
+    <h2>Como funciona agora</h2>
+    <p class="mut">O login do site de conversão <strong>não precisa de senha</strong> — qualquer um usa normalmente.</p>
+    <p class="mut">Quem mantém o YouTube vivo é a <strong>extensão privada</strong> no PC (ou Kiwi no Android): ela puxa sozinha os cookies da conta descartável e manda pro servidor.</p>
+    <p class="mut">No iPhone/Safari não dá pra instalar essa extensão. Use o site normalmente; o PC com a extensão segura o login.</p>
+    <a class="cta" href="/">Abrir o conversor</a>
+    <button type="button" class="secondary" id="btnRefresh">Atualizar status</button>
   </section>
 </div>
 <script>
-const $ = (s) => document.querySelector(s);
-let file = null;
-
 async function status() {
   try {
     const s = await (await fetch('/api/status')).json();
-    $('#dot').className = `dot ${s.youtube ? 'ok' : 'err'}`;
-    $('#statusText').textContent = s.youtube ? 'O login do YouTube está funcionando.' : 'O login do YouTube caiu: manda cookies novos.';
+    document.getElementById('dot').className = `dot ${s.youtube ? 'ok' : 'err'}`;
+    document.getElementById('statusText').textContent = s.youtube
+      ? 'YouTube ok no servidor — pode converter.'
+      : 'YouTube sem login no servidor. Deixe a extensão rodando num PC logado na conta descartável.';
   } catch {
-    $('#statusText').textContent = 'Não consegui conferir o login agora.';
+    document.getElementById('statusText').textContent = 'Não consegui falar com o servidor.';
   }
 }
+document.getElementById('btnRefresh').onclick = status;
 status();
-
-function pick(f) {
-  file = f || null;
-  $('#fileName').textContent = file ? file.name : 'Escolher o cookies.txt';
-}
-$('#file').addEventListener('change', (e) => pick(e.target.files[0]));
-const drop = $('#drop');
-['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('on'); }));
-['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('on'); }));
-drop.addEventListener('drop', (e) => pick(e.dataTransfer.files[0]));
-
-$('#form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const msg = $('#msg');
-  msg.hidden = true;
-  if (!file) { msg.className = 'msg err'; msg.textContent = 'Escolhe o arquivo de cookies primeiro.'; msg.hidden = false; return; }
-  if (file.size > 380_000) { msg.className = 'msg err'; msg.textContent = 'Esse arquivo é grande demais pra ser um cookies.txt.'; msg.hidden = false; return; }
-  const btn = $('#send');
-  btn.disabled = true;
-  btn.textContent = 'Testando no YouTube…';
-  try {
-    const r = await fetch('/api/cookies', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: $('#token').value, content: await file.text() }),
-    });
-    const j = await r.json().catch(() => ({}));
-    const ok = r.ok && j.ok;
-    msg.className = `msg ${ok ? 'ok' : 'err'}`;
-    msg.textContent = j.message || j.error || `Erro ${r.status}`;
-    msg.hidden = false;
-    if (ok) { pick(null); $('#file').value = ''; }
-  } catch {
-    msg.className = 'msg err';
-    msg.textContent = 'Não consegui falar com o servidor.';
-    msg.hidden = false;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Renovar e testar';
-    status();
-  }
-});
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 </script>
 </body>
 </html>

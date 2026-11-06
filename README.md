@@ -4,27 +4,74 @@ YouTube, YouTube Music, Spotify, Deezer, Apple Music, X/Twitter, Instagram, TikT
 
 Rodando em https://convert.saygabbis.cloud
 
+## Arquitetura
+
+| Camada | Responsável por | Independente do usuário? |
+|--------|-----------------|--------------------------|
+| Site + API (`server.js`) | Conversões, fila, health | Sim |
+| systemd (WARP, PO token, site, timers) | 24/7, restart, healthcheck | Sim |
+| PWA (`public/sw.js`) | App no celular / share target | N/A (cliente) |
+| Extensão `extension/` | Monitoramento + auth admin + renovação consentida | **Não** sobe o site |
+
+A extensão **não** mantém o site no ar. Quedas recorrentes vinham de processo sem supervisor forte, cookies do YouTube expirando e dependências (yt-dlp / WARP / PO token).
+
 ## Como funciona
 
-- `server.js`: servidor Node sem dependências que chama o [yt-dlp](https://github.com/yt-dlp/yt-dlp) + ffmpeg, com fila (2 conversões por vez) e progresso.
-- `providers.js`: posts e perfis com o arquivo original, por APIs e páginas públicas: X (FxTwitter), Bluesky (API oficial), Instagram (embed), TikTok sem marca d'água (TikWM), Vimeo (config do player), Pinterest e Tumblr (metadados da página). Spotify, Deezer e Apple Music viram lista de faixas, e o áudio vem da mesma música no YouTube Music (o áudio deles tem DRM).
-- `public/`: a página (dá pra instalar como app no celular e usar o "Compartilhar" do YouTube).
-- Os arquivos convertidos são apagados depois de 1 hora.
-- O YouTube bloqueia IP de datacenter, então o yt-dlp sai pelo **Cloudflare WARP** (via `wireproxy`, um proxy SOCKS local que não mexe na rede do sistema) e usa o [bgutil PO token provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider).
+- `server.js`: Node sem dependências npm; chama yt-dlp + ffmpeg; fila; timeouts de job; logs JSON; auth admin por dispositivo.
+- `lib/`: logger, retry com backoff, auth (access/refresh/rotação/revogação), health profundo.
+- `providers.js`: metadados por APIs públicas (X, Bluesky, Instagram, TikTok, etc.).
+- `public/`: site + PWA + `/renovar` (admin mobile-friendly).
+- `extension/`: extensão privada Chromium MV3.
+- `scripts/systemd/`: unidades para VPS Ubuntu 24.04.
 
 ## Rodar
 
 ```bash
-npm run setup      # instala ffmpeg, yt-dlp, wireproxy, WARP e o PO token provider
-npm run start:vps  # sobe tudo (WARP + PO token + site em 127.0.0.1:5180)
+npm run setup           # ffmpeg, yt-dlp, wireproxy, WARP, PO token
+npm start               # só o site (dev)
+npm run start:vps       # supervisor shell (legado)
+sudo npm run install:systemd   # recomendado na VPS (restart + boot + health)
+npm test
 ```
 
-Logs em `logs/`. Health check: `curl http://127.0.0.1:5180/health`.
+Health: `curl http://127.0.0.1:5180/health`  
+Health admin (Bearer): `GET /api/admin/health` ou `GET /health?deep=1`
 
-Cookies: coloque um `cookies.txt` (formato Netscape, de uma conta Google **descartável**) na raiz do projeto, com `chmod 600`. Ele nunca vai pro git.
+Cookies: `cookies.txt` (Netscape, conta Google **descartável**) na raiz, `chmod 600`. Nunca vai pro git.
 
-Variáveis opcionais: `PORT` (5180), `YTDLP_COOKIES` (`./cookies.txt`), `YTDLP_PROXY` (`socks5://127.0.0.1:40000`; vazio = sem proxy), `MAX_RUNNING` (2), `JOB_TTL_MIN` (60).
+Variáveis: `PORT` (5180), `HOST`, `SITE_ORIGIN`, `YTDLP_COOKIES`, `YTDLP_PROXY` (vazio = sem proxy), `MAX_RUNNING`, `JOB_TTL_MIN`, `JOB_TIMEOUT_MIN` (45), `INFO_TIMEOUT_SEC` (90), `ADMIN_ACCESS_TTL_MIN`, `ADMIN_REFRESH_TTL_DAYS`.
+
+## Autenticação administrativa
+
+1. Segredo de enrollment: arquivo `admin.token` no servidor (gerado na 1ª subida; só SSH).
+2. `POST /api/admin/login` com esse código → access token (curto) + refresh token (rotativo).
+3. Dispositivos em `data/devices.json`; revogação imediata via `POST /api/admin/revoke`.
+4. `/api/cookies` aceita `Authorization: Bearer …` **ou** o bootstrap `admin.token` (emergência).
+5. UI: `/renovar` (PWA/mobile) e extensão desktop.
+
+**Nunca** coloque `admin.token`, refresh tokens ou `data/auth.secret` no frontend versionado ou no git.
+
+## Extensão
+
+Veja [extension/README.md](extension/README.md).
+
+## Mobile / PWA
+
+- Manifest + ícones + `share_target` já existiam.
+- Service worker `sw.js`: shell offline, APIs sempre na rede.
+- No Android/iOS: instalar o site como app e usar `/renovar` para admin — **sem** extensão.
 
 ## nginx
 
-Proxy de `convert.saygabbis.cloud` → `127.0.0.1:5180` com `proxy_buffering off` e `proxy_read_timeout` alto (arquivos grandes).
+Proxy de `convert.saygabbis.cloud` → `127.0.0.1:5180` com HTTPS, `proxy_buffering off` e `proxy_read_timeout` alto.
+
+## Deploy na VPS (resumo)
+
+```bash
+cd /caminho/do/convenus
+git pull
+# pare o start-vps antigo (screen/tmux) se ainda estiver rodando
+sudo bash scripts/install-systemd.sh
+systemctl status convenus convenus-warp convenus-pot --no-pager
+curl -s http://127.0.0.1:5180/health
+```

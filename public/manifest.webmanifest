@@ -3,8 +3,11 @@
   "short_name": "Convenus",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#e9edf2",
   "theme_color": "#e9edf2",
+  "lang": "pt-BR",
+  "categories": ["utilities"],
   "icons": [
     {
       "src": "/icon.svg",

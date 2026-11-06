@@ -1,0 +1,18 @@
+[Unit]
+Description=Convenus Cloudflare WARP (wireproxy SOCKS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/convenus
+ExecStart=/home/USER/.local/bin/wireproxy -c /opt/convenus/warp/wireproxy.conf
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=append:/opt/convenus/logs/warp.log
+StandardError=append:/opt/convenus/logs/warp.log
+
+[Install]
+WantedBy=multi-user.target
