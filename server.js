@@ -947,12 +947,20 @@ async function handle(req, res) {
   const { pathname, searchParams } = new URL(req.url, 'http://x');
 
   // CSRF: pedido que muda estado vindo de outro site é recusado (o cookie já é SameSite=Lax).
+  // Extensão Chromium (chrome-extension://) e Firefox (moz-extension://) são permitidas.
+  // Bearer com admin.token também libera (sync da extensão privada).
+  const bearer = (() => {
+    const m = /^Bearer\s+(\S+)/i.exec(String(req.headers.authorization || ''));
+    return m ? m[1].trim() : '';
+  })();
   if (!['GET', 'HEAD'].includes(req.method) && req.headers.origin) {
-    let host = '';
+    let ok = false;
     try {
-      host = new URL(req.headers.origin).host;
+      const u = new URL(req.headers.origin);
+      ok = u.protocol === 'chrome-extension:' || u.protocol === 'moz-extension:' || u.host === req.headers.host;
     } catch { /* origin inválido */ }
-    if (host !== req.headers.host) return sendJson(res, 403, { error: 'Origem não permitida.' });
+    if (!ok && auth.checkToken(bearer)) ok = true;
+    if (!ok) return sendJson(res, 403, { error: 'Origem não permitida.' });
   }
 
   if (pathname === '/health') {
@@ -970,7 +978,7 @@ async function handle(req, res) {
   }
   if (pathname === '/entrar') return serveStatic(req, res, '/entrar.html');
 
-  if (!PUBLIC_PATHS.has(pathname) && !auth.sessionFrom(req)) {
+  if (!PUBLIC_PATHS.has(pathname) && !auth.sessionFrom(req) && !auth.checkToken(bearer)) {
     if (pathname.startsWith('/api/')) return sendJson(res, 401, { error: 'Entra com o código de acesso primeiro.' });
     res.writeHead(302, { location: `/entrar?next=${encodeURIComponent(req.url)}`, 'cache-control': 'no-store' });
     return res.end();
