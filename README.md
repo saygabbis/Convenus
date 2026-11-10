@@ -27,9 +27,10 @@ npm test           # testes (unidade + integração com yt-dlp falso, sem rede)
 
 Em produção, o recomendado são os serviços systemd de `deploy/systemd/` (veja `docs/IMPLANTACAO.md`).
 
-- **Acesso:** o código fica em `admin.token` (`cat ~/Bots/Convert/admin.token`). Pra trocar o código e deslogar todos os aparelhos: `printf 'novo' > admin.token` e reinicie o site.
+- **Acesso:** o site é aberto. Só a administração (`/renovar` e `/api/cookies`) pede o código, que fica em `admin.token` (`cat ~/Bots/Convert/admin.token`). Pra trocar o código e deslogar todos os aparelhos: `printf 'novo' > admin.token` e reinicie o site.
+- **Histórico por aparelho:** cada navegador ganha um id aleatório no cookie `cv_dev` (HttpOnly) e só vê, baixa e apaga as próprias conversões. Conversão de outro aparelho responde 404.
 - **Cookies do YouTube:** pela página `/renovar`, no site. Eles nunca vão pro git.
-- **Arquivos:** ficam em `downloads/` por 24 h (`JOB_TTL_MIN`) e o histórico por 30 dias (`HISTORY_DAYS`). O start **não** apaga nada; a limpeza é por idade e nunca toca tarefa ativa.
+- **Arquivos:** tudo some 1 h depois de pronto (`JOB_TTL_MIN`): o arquivo em `downloads/` e a linha do histórico. "Limpar" no site apaga na hora. O start **não** apaga nada antes do prazo; a limpeza roda a cada 2 min e nunca toca tarefa ativa.
 
 ### Variáveis opcionais
 
@@ -41,25 +42,24 @@ Em produção, o recomendado são os serviços systemd de `deploy/systemd/` (vej
 | `YTDLP_PROXY` | `socks5://127.0.0.1:40000` | WARP (vazio = sem proxy) |
 | `POT_URL` | `http://127.0.0.1:4416` | PO token provider (só pro status) |
 | `MAX_RUNNING` | `2` | conversões ao mesmo tempo |
-| `JOB_TTL_MIN` | `1440` | minutos que um arquivo pronto fica disponível |
-| `HISTORY_DAYS` | `30` | dias de histórico no banco |
+| `JOB_TTL_MIN` | `60` | minutos até o arquivo pronto e o histórico serem apagados |
 | `JOB_TIMEOUT_MIN` / `JOB_IDLE_MIN` | `240` / `10` | tempo máximo de uma tarefa / sem progresso = travada |
 | `INFO_TIMEOUT_SEC` | `120` | tempo máximo de uma busca |
 | `MIN_FREE_GB` | `2` | abaixo disso, recusa tarefas novas |
 
 ### Rotas
 
-Todas exigem login, menos `/entrar`, `/api/login`, os ícones do app e o `/health`. O `/health` público só diz `{"ok":true}`; o detalhe só aparece pra pedidos feitos de dentro da VPS. Pedidos que mudam estado vindos de outro site (cabeçalho `Origin` diferente) são recusados.
+Todas são abertas, menos `/renovar` e `/api/cookies` (pedem o código de acesso). `/api/status` sem login só diz `{ok, youtube, admin}`. O `/health` público só diz `{"ok":true}`; o detalhe só aparece pra pedidos feitos de dentro da VPS. Pedidos que mudam estado vindos de outro site (cabeçalho `Origin` diferente) são recusados.
 
 | Rota | O que faz |
 |---|---|
 | `POST /api/login` / `POST /api/logout` | entra (com limite de tentativas) / sai |
 | `POST /api/info` | busca um link (`{url, page}`; playlists vêm em páginas de 200) |
-| `GET /api/jobs` | histórico (do banco) |
+| `GET /api/jobs` | histórico deste aparelho, só da última hora |
 | `POST /api/jobs` | cria uma tarefa (`mp4`, `mp3`, `wav`, `srt`; legenda em `subs: {lang, embed}`) |
-| `GET /api/jobs/:id`, `DELETE`, `/file` | acompanha, cancela, baixa |
+| `GET /api/jobs/:id`, `DELETE`, `/file` | acompanha, cancela (ativa) ou apaga de vez (terminada), baixa |
 | `GET /api/media` | baixa foto/vídeo direto de CDNs permitidos |
-| `GET /api/status` | saúde completa (yt-dlp, ffmpeg, WARP, PO token, disco, fila, login do YouTube) |
+| `GET /api/status` | saúde completa pra admin (yt-dlp, ffmpeg, WARP, PO token, disco, fila, login do YouTube) |
 | `POST /api/cookies` | renova os cookies do YouTube (valida antes de trocar) |
 
 ## yt-dlp

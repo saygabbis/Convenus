@@ -67,23 +67,32 @@ test.after(async () => {
   fs.rmSync(DATA, { recursive: true, force: true });
 });
 
-test('sem login: página manda pra /entrar, API responde 401, /health público é mínimo', async () => {
+let device = '';
+test('site aberto sem código: página já sai com id do aparelho; só a administração pede o código', async () => {
   await start();
   const home = await req('/');
-  assert.equal(home.status, 302);
-  assert.match(home.headers.get('location'), /^\/entrar\?next=/);
-  assert.equal((await req('/api/status')).status, 401);
-  assert.equal((await post('/api/info', { url: URL_OK })).status, 401);
-  assert.equal((await req('/api/jobs/0123456789abcdef/file')).status, 401);
+  assert.equal(home.status, 200);
+  const set = home.headers.get('set-cookie') || '';
+  assert.match(set, /^cv_dev=[\w-]{22,}/);
+  assert.match(set, /HttpOnly/);
+  device = set.split(';')[0];
+  cookie = device;
+  assert.equal((await req('/')).headers.get('set-cookie'), null, 'aparelho conhecido não ganha id novo');
+  const st = await (await req('/api/status')).json();
+  assert.deepEqual(Object.keys(st).sort(), ['admin', 'ok', 'youtube'], 'sem detalhes da VPS pra quem não é admin');
+  assert.equal(st.admin, false);
+  assert.equal((await post('/api/info', { url: URL_OK })).status, 200);
   assert.equal((await post('/api/cookies', { content: 'x' })).status, 401);
-  assert.equal((await req('/api/media?u=https://i.ytimg.com/vi/x/hqdefault.jpg')).status, 401);
+  const renew = await req('/renovar');
+  assert.equal(renew.status, 302);
+  assert.match(renew.headers.get('location'), /^\/entrar\?next=/);
   const pub = await (await req('/health', { headers: { 'x-real-ip': '8.8.8.8' } })).json();
   assert.deepEqual(Object.keys(pub), ['ok'], 'sem detalhes pra quem vem de fora');
   assert.equal((await req('/entrar')).status, 200);
   assert.equal((await req('/icon.svg')).status, 200);
 });
 
-test('login: código errado recusa, certo entra; Origin de outro site é barrado', async () => {
+test('login de admin: código errado recusa, certo entra; Origin de outro site é barrado', async () => {
   assert.equal((await post('/api/login', { token: 'errado' })).status, 403);
   const token = fs.readFileSync(path.join(DATA, 'admin.token'), 'utf8').trim();
   const r = await post('/api/login', { token });
@@ -91,8 +100,8 @@ test('login: código errado recusa, certo entra; Origin de outro site é barrado
   const set = r.headers.get('set-cookie');
   assert.match(set, /HttpOnly/);
   assert.match(set, /SameSite=Lax/);
-  cookie = set.split(';')[0];
-  assert.equal((await req('/')).status, 200);
+  cookie = `${device}; ${set.split(';')[0]}`;
+  assert.equal((await req('/renovar')).status, 200);
   assert.equal((await post('/api/info', { url: URL_OK }, { origin: 'https://site-malicioso.example' })).status, 403);
 });
 
@@ -130,6 +139,24 @@ test('só a legenda (.srt); idioma inexistente é recusado', async () => {
   assert.equal(j.status, 'done', j.error);
   assert.match(j.filename, /\.srt$/);
   assert.equal((await post('/api/jobs', { url: URL_OK, item: 0, kind: 'srt', subs: { lang: 'xx' } })).status, 400);
+});
+
+test('outro aparelho não vê nem baixa as conversões deste', async () => {
+  const other = { cookie: 'cv_dev=OutroAparelhoQualquer0000' };
+  assert.equal((await req(`/api/jobs/${doneId}`, { headers: other })).status, 404);
+  assert.equal((await req(`/api/jobs/${doneId}/file`, { headers: other })).status, 404);
+  assert.equal((await req(`/api/jobs/${doneId}`, { method: 'DELETE', headers: other })).status, 404);
+  assert.deepEqual((await (await req('/api/jobs', { headers: other })).json()).jobs, []);
+  const mine = await (await req('/api/jobs')).json();
+  assert.ok(mine.jobs.some((x) => x.id === doneId));
+});
+
+test('limpar apaga de vez a conversão terminada (arquivo e histórico)', async () => {
+  const r = await post('/api/jobs', { url: URL_OK, item: 0, kind: 'srt', title: 'Some', subs: { lang: 'pt' } });
+  const j = await waitJob((await r.json()).id);
+  assert.equal((await req(`/api/jobs/${j.id}`, { method: 'DELETE' })).status, 200);
+  assert.equal((await req(`/api/jobs/${j.id}`)).status, 404);
+  assert.ok(!fs.existsSync(path.join(DATA, 'downloads', j.id)));
 });
 
 test('reinício: arquivo pronto continua lá e baixável (nada de apagar downloads no start)', async () => {

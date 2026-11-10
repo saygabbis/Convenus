@@ -170,9 +170,30 @@
   .trk .d { font-size: 12px; color: var(--mut); flex: none; }
   .subs { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 18px; padding-top: 18px; border-top: 1px solid color-mix(in srgb, var(--mut) 18%, transparent); }
   .subs label { font-size: 13px; color: var(--mut); }
-  .subs select { font: inherit; font-size: 14px; color: var(--ink); background: var(--fill); border: 0; border-radius: 12px; padding: 10px 12px; flex: 1 1 180px; min-width: 0; }
-  .subs .chk { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); cursor: pointer; }
-  .subs .chk input { width: 18px; height: 18px; accent-color: var(--ac); }
+  .subs select {
+    font: inherit; font-size: 14px; color: var(--ink); border: 0; border-radius: 14px; padding: 11px 42px 11px 14px; flex: 1 1 180px; min-width: 0; cursor: pointer;
+    -webkit-appearance: none; appearance: none; transition: background-color .25s;
+    background: var(--fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23939aa6' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center;
+  }
+  .subs select:hover { background-color: var(--fill-hover); }
+  .subs select:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+  .subs .chk { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); font-size: 14px; cursor: pointer; padding: 9px 14px 9px 10px; border-radius: 14px; background: var(--fill); transition: background .25s, opacity .25s; user-select: none; }
+  .subs .chk:hover { background: var(--fill-hover); }
+  .subs .chk:has(input:disabled) { opacity: .5; cursor: default; }
+  .subs .chk:has(input:disabled):hover { background: var(--fill); }
+  .chk input {
+    -webkit-appearance: none; appearance: none; margin: 0; flex: none; width: 22px; height: 22px; border-radius: 7px; cursor: inherit;
+    background: var(--card); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--mut) 45%, transparent);
+    display: grid; place-content: center; transition: background .2s, box-shadow .2s;
+  }
+  .chk input::before {
+    content: ""; width: 14px; height: 14px; background: var(--cta-ink); transform: scale(0); transition: transform .25s cubic-bezier(.34,1.56,.64,1);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  .chk input:checked { background: var(--cta); box-shadow: none; }
+  .chk input:checked::before { transform: scale(1); }
+  .chk input:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
   .subs .k { flex: 1 1 100%; }
   .more { width: 100%; margin-top: 12px; }
   .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0 0 22px; }
@@ -259,7 +280,7 @@
   <div class="alert" id="ytAlert" hidden role="status">
     <span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 8v5M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg></span>
     <p><strong>O login do YouTube caiu.</strong> YouTube e músicas (Spotify, Deezer, Apple Music) ficam fora até renovar. O resto continua funcionando.</p>
-    <a class="k" href="/renovar">Renovar agora</a>
+    <a class="k" href="/renovar" id="renewBtn" hidden>Renovar agora</a>
   </div>
 
   <div class="layout">
@@ -339,7 +360,7 @@
           Nada por aqui ainda.<br>Cola um link pra começar.
         </div>
       </section>
-      <footer class="mut">Os arquivos convertidos ficam disponíveis por 24 horas.</footer>
+      <footer class="mut">Só este aparelho vê as suas conversões. Tudo é apagado 1 hora depois de pronto.</footer>
     </div>
   </div>
 </div>
@@ -383,7 +404,7 @@ const ICONS = {
   moon: '<path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   ok: '<path d="M5 12l5 5L20 7"/>',
-  err: '<path d="M12 8v5M12 17h.01"/>',
+  err: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16h.01"/>',
   run: '<path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/>',
   wait: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
   dl: '<path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/>',
@@ -417,10 +438,6 @@ function fileBase(s) { return String(s || 'arquivo').replace(/\s+/g, ' ').trim()
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
-  if (r.status === 401) {
-    location.href = `/entrar?next=${encodeURIComponent(location.pathname + location.search)}`;
-    throw new Error('Entra com o código de acesso primeiro.');
-  }
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `Erro ${r.status}`);
   return j;
@@ -452,7 +469,11 @@ paintTheme();
 
 // ---------- aviso do login do YouTube ----------
 async function checkYt() {
-  try { $('#ytAlert').hidden = (await api('/api/status')).youtube; } catch {}
+  try {
+    const s = await api('/api/status');
+    $('#ytAlert').hidden = s.youtube;
+    $('#renewBtn').hidden = !s.admin; // só quem tem o código de acesso troca o login
+  } catch {}
 }
 checkYt();
 setInterval(checkYt, 5 * 60_000);
@@ -813,10 +834,12 @@ function jobLabel(j) {
   return j.platform ? `${j.platform} · ${k}` : k;
 }
 
+const HOUR = 3_600_000;
+const recent = (j) => ACTIVE.includes(j.status) || !j.finishedAt || Date.now() - j.finishedAt < HOUR;
 function saveJobs() {
-  store('gc-jobs', state.jobs.filter((j) => j.status !== 'expired').slice(0, 30));
+  store('gc-jobs', state.jobs.filter((j) => j.status !== 'expired' && recent(j)).slice(0, 30));
 }
-const hidden = new Set(load('gc-hidden', []));
+try { localStorage.removeItem('gc-hidden'); } catch {}
 
 function renderJobs() {
   const list = state.jobs;
@@ -857,9 +880,9 @@ $('#jobs').addEventListener('click', async (e) => {
 });
 
 $('#clear').addEventListener('click', () => {
-  // Só esconde da lista: os arquivos continuam no servidor até expirar.
-  for (const j of state.jobs) if (!ACTIVE.includes(j.status)) hidden.add(j.id);
-  store('gc-hidden', [...hidden].slice(-300));
+  // Apaga de vez no servidor (arquivo e histórico) o que já terminou.
+  const done = state.jobs.filter((j) => !ACTIVE.includes(j.status));
+  for (const j of done) api(`/api/jobs/${j.id}`, { method: 'DELETE' }).catch(() => {});
   state.jobs = state.jobs.filter((j) => ACTIVE.includes(j.status));
   saveJobs();
   renderJobs();
@@ -899,12 +922,12 @@ function triggerDownload(href) {
   a.remove();
 }
 
-// Histórico vem do servidor (sobrevive a reinícios e vale em qualquer aparelho); a cópia local
-// só aparece enquanto ele não responde.
-state.jobs = load('gc-jobs', []).filter((j) => !hidden.has(j.id));
+// Histórico vem do servidor, só deste aparelho e só da última hora; a cópia local só aparece
+// enquanto ele não responde.
+state.jobs = load('gc-jobs', []).filter(recent);
 renderJobs();
 api('/api/jobs?limit=30').then(({ jobs }) => {
-  state.jobs = jobs.filter((j) => !hidden.has(j.id));
+  state.jobs = jobs;
   saveJobs();
   renderJobs();
   if (state.jobs.some((j) => ACTIVE.includes(j.status))) poll();

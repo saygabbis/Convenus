@@ -55,6 +55,34 @@ test('banco: load traz ativas sempre e terminadas só dentro do prazo; prune nã
   s.close();
 });
 
+test('banco: histórico é por aparelho e só da última hora', () => {
+  const s = new Store(path.join(tmp(), 'db.sqlite'));
+  const now = Date.now();
+  s.save(job({ id: '1'.repeat(16), device: 'cel', status: 'done', finishedAt: now - 10 * 60_000 }));
+  s.save(job({ id: '2'.repeat(16), device: 'cel', status: 'done', finishedAt: now - 2 * 3_600_000 }));
+  s.save(job({ id: '3'.repeat(16), device: 'cel', status: 'running' }));
+  s.save(job({ id: '4'.repeat(16), device: 'pc', status: 'done', finishedAt: now - 60_000 }));
+  s.save(job({ id: '5'.repeat(16), status: 'done', finishedAt: now - 60_000 })); // antigo, sem aparelho
+  const ids = s.history('cel', now - 3_600_000).map((j) => j.id).sort();
+  assert.deepEqual(ids, ['1'.repeat(16), '3'.repeat(16)]);
+  assert.deepEqual(s.history('pc', now - 3_600_000).map((j) => j.id), ['4'.repeat(16)]);
+  assert.deepEqual(s.history(null, 0), []);
+  assert.equal(s.get('4'.repeat(16)).device, 'pc');
+  s.close();
+});
+
+test('banco: banco antigo sem a coluna do aparelho ganha ela sozinho', () => {
+  const file = path.join(tmp(), 'db.sqlite');
+  const { DatabaseSync } = require('node:sqlite');
+  const old = new DatabaseSync(file);
+  old.exec("CREATE TABLE jobs (id TEXT PRIMARY KEY, mode TEXT NOT NULL, url TEXT NOT NULL, item_index INTEGER, named INTEGER NOT NULL DEFAULT 0, duration REAL NOT NULL DEFAULT 0, kind TEXT NOT NULL, quality TEXT, title TEXT NOT NULL DEFAULT '', opts TEXT NOT NULL DEFAULT '{}', platform TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, phase TEXT NOT NULL DEFAULT '', percent REAL NOT NULL DEFAULT 0, error TEXT, file TEXT, size INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, started_at INTEGER NOT NULL DEFAULT 0, finished_at INTEGER NOT NULL DEFAULT 0)");
+  old.close();
+  const s = new Store(file);
+  s.save(job({ device: 'cel' }));
+  assert.equal(s.get('a'.repeat(16)).device, 'cel');
+  s.close();
+});
+
 // ---------- acesso ----------
 
 test('acesso: código certo/errado e sessão assinada', () => {

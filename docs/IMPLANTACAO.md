@@ -5,7 +5,7 @@ Branch: `manutencao-estabilidade`. Nada aqui foi aplicado em produção: este é
 ## O que muda pra quem usa
 
 - **Login:** o site passa a pedir o **código de acesso** uma vez por aparelho (o código do `admin.token`). Sem ele, ninguém usa o site, a API nem o proxy de mídia.
-- **Arquivos:** prontos ficam **24 h** (antes 1 h) e **não somem mais em reinícios**.
+- **Arquivos:** prontos ficam **1 h** (arquivo e histórico), por aparelho, e **não somem antes disso em reinícios**.
 - **Histórico:** vem do servidor, então vale em qualquer aparelho.
 - **Legendas:** escolha do idioma, opção de colocar dentro do MP4 ou baixar só a legenda (.srt).
 - **Playlists:** não param mais em 200 itens; o botão "Carregar mais" traz de 200 em 200.

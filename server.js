@@ -28,9 +28,12 @@ const DB_FILE = path.resolve(process.env.DB_FILE || path.join(DATA_DIR, 'convenu
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const POT_URL = process.env.POT_URL ?? 'http://127.0.0.1:4416';
 const MAX_RUNNING = Number(process.env.MAX_RUNNING || 2);
-// Arquivos prontos ficam disponíveis por 24 h (antes: 1 h e apagados em todo reinício).
-const JOB_TTL_MS = Number(process.env.JOB_TTL_MIN || 1440) * 60_000;
-const HISTORY_MS = Number(process.env.HISTORY_DAYS || 30) * 86_400_000;
+// Tudo some 1 h depois de pronto: o arquivo e a linha do histórico (sobrevive a reinícios até lá).
+const JOB_TTL_MS = Number(process.env.JOB_TTL_MIN || 60) * 60_000;
+const HISTORY_MS = JOB_TTL_MS;
+// Cada navegador recebe um id aleatório (cookie HttpOnly) e só vê as próprias conversões.
+const DEVICE_COOKIE = 'cv_dev';
+const DEVICE_RE = new RegExp(`(?:^|;\\s*)${DEVICE_COOKIE}=([A-Za-z0-9_-]{22,64})`);
 const INFO_TTL_MS = 10 * 60_000;
 const INFO_TIMEOUT_MS = Number(process.env.INFO_TIMEOUT_SEC || 120) * 1000;
 const JOB_TIMEOUT_MS = Number(process.env.JOB_TIMEOUT_MIN || 240) * 60_000;
@@ -679,10 +682,10 @@ function runYtdlpJob(job) {
   });
 }
 
-function createJob({ mode = 'native', url, index = null, named = false, duration = 0, kind, quality, title, opts = {}, platform = '' }) {
+function createJob({ mode = 'native', url, index = null, named = false, duration = 0, kind, quality, title, opts = {}, platform = '', device = null }) {
   const id = crypto.randomBytes(8).toString('hex');
   const job = {
-    id, mode, url, index, named, duration, kind, quality, title: String(title || '').slice(0, 300), opts, platform,
+    id, mode, url, index, named, duration, kind, quality, title: String(title || '').slice(0, 300), opts, platform, device,
     dir: path.join(DOWNLOAD_DIR, id),
     status: 'queued', phase: 'Na fila', percent: 0, lastPct: 0, speed: '', eta: '',
     error: null, file: null, size: 0, attempts: 0, createdAt: Date.now(), startedAt: 0, finishedAt: 0, proc: null,
@@ -707,6 +710,13 @@ function cancelJob(job) {
     job.status = 'canceled'; // esperando a vez: o startJob encerra quando chegar
     job.stop?.();
   }
+}
+
+// "Limpar" no site: tarefa terminada some de vez (arquivo e histórico), sem esperar a 1 h.
+function forgetJob(job) {
+  fs.rmSync(path.join(DOWNLOAD_DIR, job.id), { recursive: true, force: true });
+  jobs.delete(job.id);
+  store.delete(job.id);
 }
 
 // Recupera tarefas do banco depois de um reinício: prontas continuam baixáveis, as que estavam
@@ -771,7 +781,7 @@ setInterval(() => {
   } catch (e) {
     console.error(`[limpeza] ${e.message}`);
   }
-}, 10 * 60_000).unref();
+}, 2 * 60_000).unref();
 
 // ---------- HTTP ----------
 
@@ -938,10 +948,19 @@ async function statusPayload() {
   };
 }
 
-// Rotas abertas sem login: a tela de entrada, os ícones do app e o /health mínimo.
-const PUBLIC_PATHS = new Set(['/entrar', '/api/login', '/health', '/manifest.webmanifest', '/icon.svg', '/icon-192.png',
-  '/icon-512.png', '/icon-maskable-192.png', '/icon-maskable-512.png', '/icon-maskable.svg', '/apple-touch-icon.png', '/favicon.ico']);
+// O site é aberto. Só a parte de administração (trocar o login do YouTube) pede o código de acesso.
+const ADMIN_PATHS = new Set(['/renovar', '/api/cookies']);
 const isLocal = (req) => !req.headers['x-real-ip'] && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+
+// Id do aparelho: lê o cookie ou cria um novo (e já manda o Set-Cookie nessa resposta).
+function deviceOf(req, res) {
+  const m = DEVICE_RE.exec(String(req.headers.cookie || ''));
+  if (m) return m[1];
+  const id = crypto.randomBytes(18).toString('base64url');
+  const secure = req.headers['x-forwarded-proto'] === 'https' || req.socket.encrypted;
+  res.setHeader('set-cookie', `${DEVICE_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${secure ? '; Secure' : ''}`);
+  return id;
+}
 
 async function handle(req, res) {
   const { pathname, searchParams } = new URL(req.url, 'http://x');
@@ -978,7 +997,8 @@ async function handle(req, res) {
   }
   if (pathname === '/entrar') return serveStatic(req, res, '/entrar.html');
 
-  if (!PUBLIC_PATHS.has(pathname) && !auth.sessionFrom(req) && !auth.checkToken(bearer)) {
+  const admin = Boolean(auth.sessionFrom(req)) || auth.checkToken(bearer);
+  if (ADMIN_PATHS.has(pathname) && !admin) {
     if (pathname.startsWith('/api/')) return sendJson(res, 401, { error: 'Entra com o código de acesso primeiro.' });
     res.writeHead(302, { location: `/entrar?next=${encodeURIComponent(req.url)}`, 'cache-control': 'no-store' });
     return res.end();
@@ -988,7 +1008,14 @@ async function handle(req, res) {
     return sendJson(res, 200, { ok: true }, { 'set-cookie': auth.cookieHeader('', req, 0) });
   }
 
-  if (pathname === '/api/status') return sendJson(res, 200, await statusPayload());
+  // Detalhe da VPS só pra admin; o site só precisa saber se o YouTube está no ar.
+  if (pathname === '/api/status') {
+    if (admin) return sendJson(res, 200, { ...(await statusPayload()), admin: true });
+    return sendJson(res, 200, { ok: !shuttingDown, youtube: ytHealthy(), admin: false });
+  }
+
+  // A página já sai com o id do aparelho, antes de qualquer conversão.
+  const device = pathname === '/' || pathname.startsWith('/api/jobs') ? deviceOf(req, res) : null;
 
   if (pathname === '/renovar') return serveStatic(req, res, '/renovar.html');
 
@@ -1012,7 +1039,7 @@ async function handle(req, res) {
 
   if (pathname === '/api/jobs' && req.method === 'GET') {
     const limit = Math.min(Math.max(parseInt(searchParams.get('limit'), 10) || 50, 1), 200);
-    const list = store.history(limit).map((j) => {
+    const list = store.history(device, Date.now() - JOB_TTL_MS, limit).map((j) => {
       const live = jobs.get(j.id);
       return publicJob(live || j);
     });
@@ -1060,7 +1087,7 @@ async function handle(req, res) {
       quality = MP3_BITRATES.includes(String(body.quality)) ? String(body.quality) : '320';
     }
     const title = String(body.title || info.title || 'arquivo');
-    const common = { kind, quality, title, opts: subs ? { subs } : {}, platform: info.platform || '' };
+    const common = { kind, quality, title, opts: subs ? { subs } : {}, platform: info.platform || '', device };
     const spec = item.search
       // Música (Spotify, Deezer, Apple Music): baixa a mesma faixa da aba de músicas do YouTube Music.
       ? { ...common, mode: 'search', url: `https://music.youtube.com/search?q=${encodeURIComponent(item.search)}#songs` }
@@ -1073,14 +1100,19 @@ async function handle(req, res) {
   const m = pathname.match(/^\/api\/jobs\/([0-9a-f]{16})(\/file)?$/);
   if (m) {
     const job = jobs.get(m[1]) || store.get(m[1]);
-    if (!job) return sendJson(res, 404, { error: 'Esse arquivo já expirou.' });
+    // Conversão de outro aparelho responde igual a uma que não existe.
+    if (!job || job.device !== device) return sendJson(res, 404, { error: 'Esse arquivo já expirou.' });
     if (m[2]) {
       if (job.status !== 'done' || !job.file || !fs.existsSync(job.file)) return sendJson(res, 404, { error: 'Arquivo não está pronto.' });
       return serveFile(req, res, job);
     }
     if (req.method === 'DELETE') {
-      if (jobs.has(job.id)) cancelJob(job);
-      return sendJson(res, 200, publicJob(job));
+      if (ACTIVE.has(job.status)) {
+        if (jobs.has(job.id)) cancelJob(job);
+        return sendJson(res, 200, publicJob(job));
+      }
+      forgetJob(job);
+      return sendJson(res, 200, { ok: true });
     }
     return sendJson(res, 200, publicJob(job));
   }
