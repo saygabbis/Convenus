@@ -612,6 +612,13 @@ function jobArgs(job) {
   } else {
     args.push('-f', 'ba/b', '-x', '--audio-format', 'wav');
   }
+  if (job.kind !== 'srt') {
+    // Progresso de verdade também na conversão/junção: o ffmpeg grava quanto já fez num arquivo
+    // (out_time_us), e a duração vem do @@D. Sem isso a barra parava cheia piscando.
+    const prog = `-progress "${path.join(job.dir, PROGRESS_FILE)}"`;
+    args.push('--print', 'before_dl:@@D %(duration)s',
+      '--postprocessor-args', `ExtractAudio+ffmpeg_o:${prog}`, '--postprocessor-args', `Merger+ffmpeg_o:${prog}`);
+  }
 
   if (job.loaded) {
     args.push('--load-info-json', job.loaded.file);
@@ -809,8 +816,60 @@ async function startJob(job) {
   runYtdlpJob(job);
 }
 
+// Quanto do total é download (o resto é o ffmpeg): juntar MP4 é cópia rápida; MP3/WAV recodificam.
+const DL_SHARE = { mp4: 0.9, mp3: 0.55, wav: 0.6 };
+const PROGRESS_FILE = '.progresso';
+
+// Último out_time_us do arquivo de progresso do ffmpeg (lê só o fim: ele cresce a conversão toda).
+function lastOutTime(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    const len = Math.min(size, 4096);
+    const b = Buffer.alloc(len);
+    fs.readSync(fd, b, 0, len, size - len);
+    const m = b.toString('latin1').match(/out_time_us=(\d+)/g);
+    return m ? Number(m.pop().split('=')[1]) : 0;
+  } catch {
+    return 0;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+const fmtEta = (s) => {
+  s = Math.round(s);
+  return s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+    : `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+};
+
 function runYtdlpJob(job) {
   let streams = 0;
+  let mediaDur = 0;
+  let ppTimer = null;
+  let ppStart = 0;
+  // Uma barra só, do começo ao fim: download (vídeo e áudio) + conversão/junção no ffmpeg.
+  const dlShare = DL_SHARE[job.kind] || 1;
+  const overall = (dl, pp) => Math.min(99.5, 100 * (dlShare * dl + (1 - dlShare) * pp));
+  const startPP = (phase) => {
+    job.phase = phase;
+    job.speed = '';
+    job.eta = '';
+    job.percent = overall(1, 0);
+    if (ppTimer || !mediaDur) return;
+    ppStart = Date.now();
+    const file = path.join(job.dir, PROGRESS_FILE);
+    ppTimer = setInterval(() => {
+      const us = lastOutTime(file);
+      if (!us) return;
+      const frac = Math.min(1, us / 1e6 / mediaDur);
+      job.percent = overall(1, frac);
+      const left = frac > 0.02 ? ((Date.now() - ppStart) / 1000) * (1 - frac) / frac : 0;
+      job.eta = left ? fmtEta(left) : '';
+      persist(job, { progress: true });
+    }, 700);
+  };
   const onLine = (line) => {
     if (line.startsWith('@@P ')) {
       const [pct, speed, eta] = line.slice(4).split('|').map((x) => x.trim());
@@ -818,20 +877,22 @@ function runYtdlpJob(job) {
       if (!Number.isNaN(n)) {
         if (n < job.lastPct - 50) streams++;
         job.lastPct = n;
-        job.percent = n;
+        // MP4: vídeo e depois áudio (o áudio é bem menor). MP3/WAV: um só.
+        const dl = job.kind === 'mp4' ? (streams === 0 ? 0.85 * n / 100 : 0.85 + 0.15 * n / 100) : n / 100;
+        job.percent = overall(Math.min(1, dl), 0);
       }
       job.speed = speed && speed !== 'NA' && speed !== 'Unknown' ? speed : '';
       job.eta = eta && eta !== 'NA' && eta !== 'Unknown' ? eta : '';
       job.phase = job.kind === 'mp4' ? (streams === 0 ? 'Baixando vídeo' : 'Baixando áudio') : 'Baixando áudio';
       persist(job, { progress: true });
+    } else if (line.startsWith('@@D ')) {
+      mediaDur = parseFloat(line.slice(4)) || 0;
     } else if (line.startsWith('@@F ')) {
       job.file = line.slice(4).trim();
     } else if (/^\[Merger\]/.test(line)) {
-      job.phase = 'Juntando vídeo e áudio';
-      job.percent = 100;
+      startPP('Juntando vídeo e áudio');
     } else if (/^\[ExtractAudio\]/.test(line)) {
-      job.phase = `Convertendo pra ${job.kind.toUpperCase()}`;
-      job.percent = 100;
+      startPP(`Convertendo pra ${job.kind.toUpperCase()}`);
     } else if (/^\[(EmbedThumbnail|Metadata)\]/.test(line)) {
       job.phase = 'Finalizando';
     } else if (/^\[EmbedSubtitle\]/.test(line)) {
@@ -854,6 +915,8 @@ function runYtdlpJob(job) {
   job.stop = h.stop;
 
   h.done.then(async (r) => {
+    clearInterval(ppTimer);
+    fs.rmSync(path.join(job.dir, PROGRESS_FILE), { force: true });
     if (job.loaded) {
       fs.rmSync(job.loaded.file, { force: true });
       // Link da busca vencido ou recusado: refaz do jeito completo (busca nova, com a vez no YouTube).
@@ -1034,6 +1097,7 @@ function htmlPage(file) {
     "media-src 'self' blob:",
     "connect-src 'self'",
     "manifest-src 'self'",
+    "worker-src 'self'",
     "form-action 'self'",
     "base-uri 'none'",
     "frame-ancestors 'none'",
@@ -1077,6 +1141,25 @@ function readJson(req, max = 10_000) {
 // Páginas de administração só pelos caminhos delas (/entrar, /renovar), nunca pelo .html direto.
 const PRIVATE_PAGES = new Set(['entrar.html', 'renovar.html']);
 
+function shareFallback(req, res) {
+  const len = Number(req.headers['content-length']) || 0;
+  const go = (q) => res.writeHead(303, { location: q ? `/?${q}` : '/', ...SECURITY_HEADERS }).end();
+  if (!len || len > 256 * 1024) { req.resume(); return go(''); }
+  const chunks = [];
+  let got = 0;
+  req.on('data', (c) => { got += c.length; if (got <= 256 * 1024) chunks.push(c); });
+  req.on('error', () => res.destroy());
+  req.on('end', () => {
+    const body = Buffer.concat(chunks).toString('utf8');
+    const q = new URLSearchParams();
+    for (const k of ['url', 'text', 'title']) {
+      const m = body.match(new RegExp(`name="${k}"\\r?\\n(?:[^\\r\\n]+\\r?\\n)*\\r?\\n([^\\r\\n]{1,4000})`));
+      if (m && m[1].trim()) q.set(k, m[1].trim());
+    }
+    go(q.toString());
+  });
+}
+
 function serveStatic(req, res, pathname, { page = null } = {}) {
   let rel = page;
   if (!rel) {
@@ -1099,6 +1182,11 @@ function serveStatic(req, res, pathname, { page = null } = {}) {
     const p = htmlPage(file);
     res.writeHead(200, { 'content-type': MIME[ext], 'cache-control': cache, ...BASE_HEADERS, 'content-security-policy': p.csp });
     return res.end(req.method === 'HEAD' ? undefined : p.body);
+  }
+  // Service worker: sempre o mais novo, e sem o "sandbox" do CSP dos arquivos (worker não roda sandboxed).
+  if (rel === 'sw.js') {
+    res.writeHead(200, { 'content-type': MIME[ext], 'cache-control': 'no-cache', ...BASE_HEADERS, 'content-security-policy': "default-src 'none'" });
+    return res.end(req.method === 'HEAD' ? undefined : fs.readFileSync(file));
   }
   res.writeHead(200, { 'content-type': MIME[ext] || 'application/octet-stream', 'cache-control': cache, ...SECURITY_HEADERS });
   if (req.method === 'HEAD') return res.end();
@@ -1342,6 +1430,11 @@ async function handle(req, res) {
   // CSRF: pedido que muda estado vindo de outro site é recusado (o cookie já é SameSite=Lax).
   // Extensão Chromium (chrome-extension://) e Firefox (moz-extension://) são permitidas.
   // Bearer com admin.token também libera (sync da extensão privada).
+  // "Compartilhar" do celular (POST do share_target). Quem cuida é o service worker (/sw.js), que
+  // guarda os arquivos no aparelho. Se ele ainda não estiver ativo, o pedido chega aqui: o link
+  // compartilhado vira ?url= e o resto é ignorado. Só redireciona, então não passa pela checagem de origem.
+  if (pathname === '/compartilhar' && req.method === 'POST') return shareFallback(req, res);
+
   const bearer = (() => {
     const m = /^Bearer\s+(\S+)/i.exec(String(req.headers.authorization || ''));
     return m ? m[1].trim() : '';

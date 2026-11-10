@@ -363,6 +363,11 @@
     /* Indicadores de progresso continuam: sem eles parece que travou. */
     .spin { animation: spin 1s linear infinite !important; }
     .track.busy i { animation: breathe 1.4s ease-in-out infinite !important; }
+    /* A troca Redes/Arquivos continua animada (no Windows com "efeitos de animação" desligados
+       o PC ficava sem ela) e a barra continua andando suave. */
+    .seg .knob { transition: transform .45s cubic-bezier(.34,1.3,.64,1), width .45s cubic-bezier(.34,1.3,.64,1) !important; }
+    .pane > .card { animation: rise .55s cubic-bezier(.22,1,.36,1) both !important; }
+    .track i { transition: width .6s cubic-bezier(.22,1,.36,1) !important; }
   }
 </style>
 </head>
@@ -1271,36 +1276,63 @@ function saveJobs() {
 }
 try { localStorage.removeItem('gc-hidden'); } catch {}
 
+// A fila é atualizada no lugar: cada conversão mantém o mesmo elemento (a animação de entrada
+// roda uma vez só) e, enquanto só muda o progresso, mexe só no texto e na largura da barra.
+function jobView(j) {
+  const active = ACTIVE.includes(j.status);
+  const pctNum = j.status === 'running' && j.percent > 0 ? Math.min(99, Math.floor(j.percent)) : null;
+  const busy = j.status === 'queued' || (j.status === 'running' && pctNum === null);
+  const lbl = esc(jobLabel(j));
+  let ico = 'wait', cls = '', sub = `${lbl} · ${esc(j.phase)}`;
+  if (j.status === 'running') {
+    ico = 'run'; cls = 'run';
+    if (pctNum !== null) sub = `${lbl} · ${j.speed ? esc(j.speed) : esc(j.phase)}${j.eta ? ' · falta ' + esc(j.eta) : ''}`;
+  }
+  if (j.status === 'done') { ico = 'ok'; cls = 'ok'; sub = `${lbl} · ${fmtSize(j.size)}`; }
+  if (j.status === 'error') { ico = 'err'; cls = 'err'; sub = esc(j.error); }
+  if (j.status === 'canceled') { ico = 'x'; sub = `${lbl} · cancelado`; }
+  if (j.status === 'expired') { ico = 'wait'; sub = `${lbl} · expirou`; }
+  const action = j.status === 'done'
+    ? `<div class="acts">${j.image && CAN_COPY ? `<button class="k icon-btn" type="button" data-copy="/api/jobs/${esc(j.id)}/file" aria-label="Copiar a imagem" title="Copiar a imagem">${svg('copy', 17)}</button>` : ''}<a class="k icon-btn" href="/api/jobs/${esc(j.id)}/file" download aria-label="Baixar" title="Baixar">${svg('dl')}</a></div>`
+    : active ? `<button class="k icon-btn" type="button" data-cancel="${j.id}" aria-label="Cancelar">${svg('x', 16)}</button>` : '';
+  const shape = `${j.status}|${busy}|${pctNum !== null}|${j.image && CAN_COPY}|${j.title}`;
+  const html = `<div class="job-row">
+      <div class="job-ico ${cls}">${svg(ico)}</div>
+      <div class="job-main"><div class="job-name">${esc(j.title)}</div><div class="job-sub${j.status === 'error' ? ' err' : ''}">${sub}</div></div>
+      ${pctNum !== null ? `<span class="job-pct">${pctNum}%</span>` : ''}${action}
+    </div>
+    ${active ? `<div class="track${busy ? ' busy' : ''}"><i style="width:${pctNum ?? 0}%"></i></div>` : ''}`;
+  return { shape, html, sub, pct: pctNum };
+}
+
 function renderJobs() {
   const list = state.jobs;
   $('#empty').hidden = list.length > 0;
   $('#clear').hidden = !list.some((j) => !ACTIVE.includes(j.status));
-  $('#jobs').innerHTML = list.map((j) => {
-    const active = ACTIVE.includes(j.status);
-    const busy = j.status === 'queued' || (j.status === 'running' && (j.percent >= 100 || j.percent === 0));
-    const lbl = esc(jobLabel(j));
-    let ico = 'wait', cls = '', sub = `${lbl} · ${esc(j.phase)}`;
-    if (j.status === 'running') {
-      ico = 'run'; cls = 'run';
-      if (j.percent > 0 && j.percent < 100) sub = `${lbl} · ${j.speed ? esc(j.speed) : esc(j.phase)}${j.eta ? ' · falta ' + esc(j.eta) : ''}`;
+  const box = $('#jobs');
+  const old = new Map([...box.children].map((el) => [el.dataset.id, el]));
+  let prev = null;
+  for (const j of list) {
+    const v = jobView(j);
+    let el = old.get(String(j.id));
+    if (el) old.delete(String(j.id));
+    else { el = document.createElement('div'); el.className = 'job'; el.dataset.id = j.id; }
+    if (el._shape !== v.shape) {
+      el.innerHTML = v.html;
+      el._shape = v.shape;
+    } else {
+      const s = el.querySelector('.job-sub');
+      if (s && s.innerHTML !== v.sub) s.innerHTML = v.sub;
+      const p = el.querySelector('.job-pct');
+      if (p && v.pct !== null) p.textContent = `${v.pct}%`;
+      const bar = el.querySelector('.track i');
+      if (bar && v.pct !== null) bar.style.width = `${v.pct}%`;
     }
-    if (j.status === 'done') { ico = 'ok'; cls = 'ok'; sub = `${lbl} · ${fmtSize(j.size)}`; }
-    if (j.status === 'error') { ico = 'err'; cls = 'err'; sub = esc(j.error); }
-    if (j.status === 'canceled') { ico = 'x'; sub = `${lbl} · cancelado`; }
-    if (j.status === 'expired') { ico = 'wait'; sub = `${lbl} · expirou`; }
-    const pct = j.status === 'running' && j.percent > 0 && j.percent < 100 ? `<span class="job-pct">${j.percent.toFixed(0)}%</span>` : '';
-    const action = j.status === 'done'
-      ? `<div class="acts">${j.image && CAN_COPY ? `<button class="k icon-btn" type="button" data-copy="/api/jobs/${esc(j.id)}/file" aria-label="Copiar a imagem" title="Copiar a imagem">${svg('copy', 17)}</button>` : ''}<a class="k icon-btn" href="/api/jobs/${esc(j.id)}/file" download aria-label="Baixar" title="Baixar">${svg('dl')}</a></div>`
-      : active ? `<button class="k icon-btn" type="button" data-cancel="${j.id}" aria-label="Cancelar">${svg('x', 16)}</button>` : '';
-    return `<div class="job">
-      <div class="job-row">
-        <div class="job-ico ${cls}">${svg(ico)}</div>
-        <div class="job-main"><div class="job-name">${esc(j.title)}</div><div class="job-sub${j.status === 'error' ? ' err' : ''}">${sub}</div></div>
-        ${pct}${action}
-      </div>
-      ${active ? `<div class="track${busy ? ' busy' : ''}"><i style="width:${j.percent || 0}%"></i></div>` : ''}
-    </div>`;
-  }).join('');
+    const want = prev ? prev.nextSibling : box.firstChild;
+    if (want !== el) box.insertBefore(el, want);
+    prev = el;
+  }
+  old.forEach((el) => el.remove());
 }
 
 $('#jobs').addEventListener('click', async (e) => {
@@ -1688,6 +1720,27 @@ const qs = new URLSearchParams(location.search);
 const shared = cleanUrl(qs.get('url') || qs.get('text') || '');
 setMode(/^https?:\/\//.test(shared) ? 'links' : load('gc-mode', 'links'), { save: false });
 if (/^https?:\/\//.test(shared)) { $('#url').value = shared; lookup(shared); history.replaceState(null, '', '/'); }
+
+// "Compartilhar" do celular com arquivos: o service worker guardou eles no aparelho; aqui viram
+// envios do conversor, como se tivessem sido soltos na página.
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+if (qs.has('compartilhado')) {
+  history.replaceState(null, '', '/');
+  (async () => {
+    try {
+      const box = await caches.open('compartilhados');
+      const files = [];
+      for (const req of await box.keys()) {
+        const r = await box.match(req);
+        const blob = await r.blob();
+        files.push(new File([blob], decodeURIComponent(r.headers.get('x-name') || 'arquivo'), { type: blob.type }));
+      }
+      await caches.delete('compartilhados');
+      if (files.length) addFiles(files);
+      else setMode('files');
+    } catch { setMode('files'); }
+  })();
+}
 </script>
 </body>
 </html>

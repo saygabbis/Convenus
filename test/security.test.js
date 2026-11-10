@@ -53,3 +53,11 @@ test('Mix do YouTube: vídeo dentro da Mix oferece a Mix; playlist normal oferec
   assert.equal(mixId('https://www.youtube.com/playlist?list=RDabc'), null, 'sem vídeo não é Mix');
   assert.equal(mixId('https://www.youtube.com/watch?v=x&list=RD"><script>'), null);
 });
+
+test('progresso real na conversão: o ffmpeg grava out_time na pasta da tarefa; legenda sozinha não usa', () => {
+  const mp3 = jobArgs({ mode: 'native', url: 'https://soundcloud.com/a/b', kind: 'mp3', quality: '320', title: 'a', dir: '/tmp/x y', opts: {} });
+  assert.ok(mp3.includes('before_dl:@@D %(duration)s'));
+  assert.ok(mp3.includes(`ExtractAudio+ffmpeg_o:-progress "${path.join('/tmp/x y', '.progresso')}"`), 'caminho entre aspas (o yt-dlp separa por espaço)');
+  const srt = jobArgs({ mode: 'native', url: 'https://soundcloud.com/a/b', kind: 'srt', title: 'a', dir: '/tmp/x', opts: { subs: { lang: 'pt' } } });
+  assert.ok(!srt.some((a) => /ffmpeg_o:-progress/.test(a)));
+});

@@ -284,3 +284,19 @@ test('yt-dlp ausente: erro amigável e o servidor continua de pé', async () => 
   assert.match((await r.json()).error, /yt-dlp não está instalado/);
   assert.equal((await fetch(`${BASE}/health`)).ok, true);
 });
+
+test('compartilhar: sem o service worker ativo, o link compartilhado ainda abre; sw.js e manifest certos', async () => {
+  const b = '----x';
+  const body = `--${b}\r\nContent-Disposition: form-data; name="title"\r\n\r\nOlha\r\n--${b}\r\nContent-Disposition: form-data; name="url"\r\n\r\nhttps://x.com/a/status/1\r\n--${b}--\r\n`;
+  const r = await fetch(`${BASE}/compartilhar`, { method: 'POST', redirect: 'manual', body, headers: { 'content-type': `multipart/form-data; boundary=${b}`, origin: 'null' } });
+  assert.equal(r.status, 303);
+  assert.equal(r.headers.get('location'), `/?${new URLSearchParams({ url: 'https://x.com/a/status/1', title: 'Olha' })}`);
+  const sw = await req('/sw.js');
+  assert.equal(sw.status, 200);
+  assert.equal(sw.headers.get('cache-control'), 'no-cache');
+  assert.doesNotMatch(sw.headers.get('content-security-policy'), /sandbox/);
+  const man = await (await req('/manifest.webmanifest')).json();
+  assert.equal(man.share_target.method, 'POST');
+  assert.equal(man.share_target.params.files[0].name, 'files');
+  assert.match((await req('/')).headers.get('content-security-policy'), /worker-src 'self'/);
+});
