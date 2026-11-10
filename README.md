@@ -2,7 +2,9 @@
 
 Baixador privado: YouTube, YouTube Music, Spotify, Deezer, Apple Music, X/Twitter, Instagram, TikTok, Bluesky, Facebook, SoundCloud, Twitch, Vimeo, Pinterest, Tumblr e outros sites que o yt-dlp suporta → **MP4** (até 4K), **MP3** (128–320 kbps), **WAV**, **legendas (.srt ou dentro do MP4)**, **fotos de posts**, **capas**, **avatares** e **banners**. Sem propaganda, sem pop-up.
 
-Rodando em https://convert.saygabbis.cloud (acesso só com código).
+Também tem um **conversor de arquivos** (aba "Arquivos", ou é só soltar/colar um arquivo em qualquer lugar da página): vídeo, áudio, imagem (até HEIC, AVIF, PSD e SVG), PDF, Word/ODT, PowerPoint, Excel, CSV/TSV/JSON, legendas, texto e .gz, pra dezenas de formatos (e ZIP/GZ/Base64 pra qualquer arquivo). Imagens prontas têm botão de copiar.
+
+Rodando em https://convert.saygabbis.cloud.
 
 ## Como funciona
 
@@ -12,6 +14,8 @@ Rodando em https://convert.saygabbis.cloud (acesso só com código).
 - `lib/auth.js`: acesso privado. Entra com o código do `admin.token` e recebe uma sessão assinada num cookie `HttpOnly`.
 - `lib/cookies.js`: cookies do YouTube. A renovação valida num arquivo temporário antes de trocar (de forma atômica) e guarda a versão anterior.
 - `lib/health.js`: estado do yt-dlp, ffmpeg, WARP, PO token e disco (`/api/status`).
+- `lib/convert.js`: conversor de arquivos. Descobre o tipo pelos bytes (nunca pelo nome) e chama ffmpeg, ImageMagick ou Ghostscript com o leitor forçado e limites (`prlimit`: CPU, memória, tamanho; prioridade baixa; ambiente sem segredos).
+- `lib/fileconv.js`: conversões em Node puro (dados, documentos, legendas, PDF de texto, ZIP/GZ/Base64), sempre num processo separado.
 - `providers.js`: posts e perfis com o arquivo original, por APIs e páginas públicas (X via FxTwitter, Bluesky, Instagram embed, TikTok via TikWM, Vimeo, Pinterest, Tumblr). Spotify, Deezer e Apple Music viram lista de faixas, e o áudio vem da mesma música no YouTube Music.
 - `public/`: a página (instalável como app; aceita o "Compartilhar" do celular).
 
@@ -31,6 +35,8 @@ Em produção, o recomendado são os serviços systemd de `deploy/systemd/` (vej
 - **Histórico por aparelho:** cada navegador ganha um id aleatório no cookie `cv_dev` (HttpOnly) e só vê, baixa e apaga as próprias conversões. Conversão de outro aparelho responde 404.
 - **Cookies do YouTube:** pela página `/renovar`, no site. Eles nunca vão pro git.
 - **Velocidade:** a busca fica guardada 30 min e o download parte dela (`--load-info-json`, sem cookies), então não extrai tudo de novo nem espera a vez no YouTube. Se o link salvo for recusado, refaz do jeito completo sozinho. Cada busca registra o tempo no log (`[busca] YouTube em X s`). As buscas usam um yt-dlp sempre aberto (`lib/ytdlp_worker.py`, ~1,4 s a menos por busca): um pedido por vez, cookies lidos e gravados a cada pedido como no normal; ocupado, travado ou sem Python, cai pro yt-dlp normal, e recicla sozinho quando o yt-dlp é atualizado. `YTDLP_WORKER=0` desliga.
+- **Conversor de arquivos:** envio em streaming direto pro disco (até `UPLOAD_MAX_MB`), id `u…` por envio, só o mesmo aparelho usa. O ffmpeg só abre arquivo local e só com os leitores da lista (`AV_FORMATS`: nada de playlist HLS/concat que leria outros arquivos); o ImageMagick recebe o leitor certo na frente (`png:`, `jpeg:`…) e limites de pixels/memória; o Ghostscript roda com `-dSAFER`; SVG vira PNG no navegador (no servidor abriria brecha). Bombas de compressão param no limite (gz 2 GB, cada parte de .docx/.xlsx 64 MB).
+- **Proteção:** CSP com hash de cada script (nada de script de fora nem inline novo), HSTS, `frame-ancestors 'none'`, COOP/CORP, `Permissions-Policy`; limite de pedidos por IP no app (busca 40/min, tarefas 240/min, envios 60/10 min, API 1200/min) e no nginx; no máximo 4 buscas no yt-dlp ao mesmo tempo; arquivos criados com permissão só do dono (`umask 077`). As páginas de admin só abrem pelos caminhos delas.
 - **Arquivos:** tudo some 1 h depois de pronto (`JOB_TTL_MIN`): o arquivo em `downloads/` e a linha do histórico. "Limpar" no site apaga na hora. O start **não** apaga nada antes do prazo; a limpeza roda a cada 2 min e nunca toca tarefa ativa.
 
 ### Variáveis opcionais
@@ -47,6 +53,8 @@ Em produção, o recomendado são os serviços systemd de `deploy/systemd/` (vej
 | `JOB_TIMEOUT_MIN` / `JOB_IDLE_MIN` | `240` / `10` | tempo máximo de uma tarefa / sem progresso = travada |
 | `INFO_TIMEOUT_SEC` | `120` | tempo máximo de uma busca |
 | `MIN_FREE_GB` | `2` | abaixo disso, recusa tarefas novas |
+| `UPLOAD_MAX_MB` | `500` | tamanho máximo de cada arquivo enviado (o nginx aceita até 520 MB em `/api/upload`) |
+| `MAX_INFO` | `4` | buscas no yt-dlp ao mesmo tempo |
 
 ### Rotas
 
@@ -56,8 +64,10 @@ Todas são abertas, menos `/renovar` e `/api/cookies` (pedem o código de acesso
 |---|---|
 | `POST /api/login` / `POST /api/logout` | entra (com limite de tentativas) / sai |
 | `POST /api/info` | busca um link (`{url, page}`; playlists vêm em páginas de 200) |
+| `POST /api/upload` | envia um arquivo pro conversor (corpo cru, nome em `x-file-name`); devolve o tipo e os formatos possíveis |
+| `DELETE /api/upload/:id` | apaga o arquivo enviado |
 | `GET /api/jobs` | histórico deste aparelho, só da última hora |
-| `POST /api/jobs` | cria uma tarefa (`mp4`, `mp3`, `wav`, `srt`; legenda em `subs: {lang, embed}`) |
+| `POST /api/jobs` | cria uma tarefa (`mp4`, `mp3`, `wav`, `srt`; legenda em `subs: {lang, embed}`), ou converte um envio (`{upload, to}`) |
 | `GET /api/jobs/:id`, `DELETE`, `/file` | acompanha, cancela (ativa) ou apaga de vez (terminada), baixa |
 | `GET /api/media` | baixa foto/vídeo direto de CDNs permitidos |
 | `GET /api/status` | saúde completa pra admin (yt-dlp, ffmpeg, WARP, PO token, disco, fila, login do YouTube) |

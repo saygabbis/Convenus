@@ -271,6 +271,69 @@
   .alert p strong { font-weight: 600; }
   .alert .k { flex: none; }
 
+  /* modo: redes | arquivos */
+  .hdr-r { display: flex; align-items: center; gap: 10px; flex: none; }
+  .seg { position: relative; display: inline-flex; padding: 4px; gap: 2px; border-radius: 17px; background: var(--card); box-shadow: var(--shadow); transition: background .3s; }
+  .seg button {
+    position: relative; z-index: 1; font: inherit; font-size: 14px; font-weight: 500; color: var(--mut); background: transparent; border: 0;
+    border-radius: 13px; padding: 9px 15px; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; transition: color .25s;
+  }
+  .seg button:hover { color: var(--ink); }
+  .seg button[aria-selected="true"] { color: var(--ac-text); }
+  .seg button:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+  .seg .knob { position: absolute; top: 4px; bottom: 4px; left: 0; width: 0; border-radius: 13px; background: var(--ac-soft); transition: transform .45s cubic-bezier(.34,1.3,.64,1), width .45s cubic-bezier(.34,1.3,.64,1); }
+  .brand p { transition: opacity .25s; }
+  .pane { display: contents; }
+  .files-mode #ytAlert { display: none; }
+  @media (max-width: 680px) { .brand p { display: none; } }
+  @media (max-width: 450px) { .brand > div { display: none; } .seg button { padding: 9px 12px; } }
+
+  /* arquivos */
+  .files { padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .drop {
+    display: flex; align-items: center; gap: 14px; padding: 18px; border-radius: 18px; background: var(--fill); cursor: pointer;
+    outline: 2px dashed color-mix(in srgb, var(--mut) 32%, transparent); outline-offset: -2px; transition: background .25s, outline-color .25s, padding .3s;
+  }
+  .drop:hover, .drop:focus-visible { background: var(--fill-hover); outline-color: var(--ac); }
+  .drop-ico { width: 46px; height: 46px; border-radius: 14px; background: var(--ac-soft); color: var(--ac-text); display: flex; align-items: center; justify-content: center; flex: none; transition: width .3s, height .3s; }
+  .drop-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13px; line-height: 1.45; }
+  .drop-txt strong { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .drop .k { flex: none; background: var(--card); pointer-events: none; }
+  .drop.mini { padding: 10px 12px; }
+  .drop.mini .drop-ico { width: 36px; height: 36px; border-radius: 11px; }
+  .drop.mini .k { display: none; }
+  @media (max-width: 520px) { .drop .k { display: none; } }
+  .flist { display: flex; flex-direction: column; }
+  .flist:not(:empty) { padding: 6px 0 2px; }
+  .fitem { display: flex; align-items: center; gap: 12px; padding: 8px 6px; animation: rise .4s cubic-bezier(.22,1,.36,1) both; }
+  .fitem .k.icon-btn { width: 38px; height: 38px; border-radius: 50%; background: transparent; }
+  .fitem .k.icon-btn:hover { background: var(--fill); }
+  .fbar { height: 5px; border-radius: 99px; background: var(--fill); margin-top: 6px; overflow: hidden; }
+  .fbar i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--ac); transition: width .3s; }
+  .fconv { padding: 14px 8px 8px; border-top: 1px solid color-mix(in srgb, var(--mut) 16%, transparent); }
+  .fgroup + .fgroup { margin-top: 16px; }
+  .fgroup .label { margin-bottom: 10px; }
+  .fconv .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
+  .fconv .chips .k { padding: 9px 15px; }
+  #fileGo { margin-top: 22px; }
+  .hint { margin: 4px 0 0; padding: 0 8px 4px; font-size: 12px; text-align: center; }
+  .dropover {
+    position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px;
+    background: color-mix(in srgb, var(--page) 72%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); pointer-events: none; animation: fade .2s both;
+  }
+  .dropover > div {
+    display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 40px 56px; border-radius: 28px; background: var(--card); text-align: center;
+    box-shadow: var(--shadow); outline: 2px dashed var(--ac); outline-offset: -10px; animation: pop .3s cubic-bezier(.22,1,.36,1) both;
+  }
+  .dropover strong { font-size: 18px; font-weight: 600; }
+  .dropover .drop-ico { width: 60px; height: 60px; border-radius: 18px; margin-bottom: 8px; }
+  @keyframes fade { from { opacity: 0; } }
+  .job .acts { display: flex; gap: 8px; flex: none; }
+  .k.icon-btn.done { color: var(--ok); }
+  .trow { display: flex; gap: 6px; }
+  .trow .k:first-child { flex: 1; min-width: 0; }
+  .trow .k.icon-btn { width: 40px; height: auto; flex: none; }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
     /* Indicadores de progresso continuam: sem eles parece que travou. */
@@ -286,12 +349,19 @@
       <svg width="50" height="50" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="18" fill="#f2734f"/><path d="M11 34a21 21 0 0 1 42 0L32 53z" fill="#fff"/><path d="M32 53L17.5 21M32 53L24.5 15.5M32 53V13M32 53l7.5-37.5M32 53l14.5-32" fill="none" stroke="#f2734f" stroke-width="2.6" stroke-linecap="round"/></svg>
       <div>
         <h1>Convenus</h1>
-        <p class="mut">Vídeos, músicas, fotos e perfis — sem propaganda</p>
+        <p class="mut" id="tagline">Vídeos, músicas, fotos e perfis — sem propaganda</p>
       </div>
     </div>
-    <button class="k icon-btn" id="theme" type="button" aria-label="Trocar tema">
-      <svg id="themeIco" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"></svg>
-    </button>
+    <div class="hdr-r">
+      <div class="seg" role="tablist" aria-label="O que converter">
+        <span class="knob" aria-hidden="true"></span>
+        <button type="button" role="tab" data-mode="links" aria-selected="true" title="Link de rede social"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg><span>Redes</span></button>
+        <button type="button" role="tab" data-mode="files" aria-selected="false" title="Arquivo do seu aparelho"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>Arquivos</span></button>
+      </div>
+      <button class="k icon-btn" id="theme" type="button" aria-label="Trocar tema">
+        <svg id="themeIco" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"></svg>
+      </button>
+    </div>
   </header>
 
   <div class="alert" id="ytAlert" hidden role="status">
@@ -302,11 +372,12 @@
 
   <div class="layout">
     <div class="col">
+      <div class="pane" id="linksPane">
       <form class="card search" id="form" autocomplete="off">
         <label for="url" class="sr">Link</label>
         <div class="field">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="mut" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
-          <input type="url" id="url" placeholder="Cola um link de vídeo, post ou perfil" inputmode="url" required>
+          <input type="text" id="url" placeholder="Cola um link de vídeo, post ou perfil" inputmode="url" autocapitalize="off" spellcheck="false">
         </div>
         <button class="k" type="button" id="paste">Colar</button>
         <div class="sites" id="sites"></div>
@@ -361,6 +432,24 @@
           <a class="k" id="cBannerBtn" download>Baixar banner</a>
         </div>
       </section>
+      </div>
+
+      <div class="pane" id="filesPane" hidden>
+      <section class="card files" id="files">
+        <label class="drop" id="drop" for="fileIn" tabindex="0">
+          <span class="drop-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V5"/><path d="M7 10l5-5 5 5"/><path d="M5 20h14"/></svg></span>
+          <span class="drop-txt"><strong id="dropTitle">Solta os arquivos aqui</strong><span class="mut" id="dropSub">ou clica pra escolher · até 500 MB cada</span></span>
+          <span class="k" aria-hidden="true">Escolher</span>
+        </label>
+        <input type="file" id="fileIn" multiple class="sr" tabindex="-1" aria-hidden="true">
+        <div class="flist" id="fileList"></div>
+        <div class="fconv" id="fileConv" hidden>
+          <div id="targets"></div>
+          <button class="cta" type="button" id="fileGo"></button>
+        </div>
+        <p class="hint mut" id="fileHint">Vídeo, áudio, imagem (até HEIC e SVG), PDF, Word, PowerPoint, Excel, CSV, JSON, legendas e texto.</p>
+      </section>
+      </div>
     </div>
 
     <div class="col">
@@ -374,11 +463,19 @@
         <div class="job-list" id="jobs"></div>
         <div class="empty mut" id="empty">
           <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
-          Nada por aqui ainda.<br>Cola um link pra começar.
+          Nada por aqui ainda.<br><span id="emptyText">Cola um link pra começar.</span>
         </div>
       </section>
       <footer class="mut">Só este aparelho vê as suas conversões. Tudo é apagado 1 hora depois de pronto.</footer>
     </div>
+  </div>
+</div>
+
+<div class="dropover" id="dropover" hidden>
+  <div>
+    <span class="drop-ico"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V5"/><path d="M7 10l5-5 5 5"/><path d="M5 20h14"/></svg></span>
+    <strong>Solta pra converter</strong>
+    <span class="mut">Qualquer arquivo, até 500 MB</span>
   </div>
 </div>
 
@@ -387,6 +484,7 @@ const $ = (s) => document.querySelector(s);
 const state = { info: null, url: '', sel: 0, kind: 'mp4', quality: { mp4: null, mp3: '320' }, variant: 0, jobs: [] };
 const RES_NAMES = { 4320: '8K', 2160: '4K', 1440: '2K', 1080: 'Full HD', 720: 'HD' };
 const ACTIVE = ['queued', 'running'];
+const CAN_COPY = Boolean(window.ClipboardItem && navigator.clipboard?.write);
 
 // Plataformas: nome, cor e como reconhecer pelo link.
 const PLATFORMS = [
@@ -432,6 +530,11 @@ const ICONS = {
   video: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9v6l5-3z"/>',
   wave: '<path d="M3 12h1M7 8v8M11 4v16M15 7v10M19 10v4"/>',
   image: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
+  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+  doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+  table: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 10h18M9 10v10"/>',
+  box: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
 };
 const svg = (name, size = 18, sw = 2.2) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
@@ -497,9 +600,18 @@ checkYt();
 setInterval(checkYt, 5 * 60_000);
 
 // ---------- buscar ----------
+// O link pode vir no meio de um texto ("Olha isso https://x.com/... via app") e com caracteres
+// invisíveis que o celular põe ao copiar: fica só com o link.
+function cleanUrl(t) {
+  const s = String(t || '').replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, '').trim();
+  const m = s.match(/https?:\/\/[^\s<>"'“”‘’]+/i);
+  return m ? m[0].replace(/[)\].,;:!?…»]+$/, '') : s;
+}
+
 let seq = 0;
 async function lookup(url) {
-  url = url.trim();
+  url = cleanUrl(url);
+  if (url && $('#url').value !== url) $('#url').value = url;
   if (!url || url === state.url) return;
   const my = ++seq;
   state.url = url;
@@ -612,7 +724,7 @@ function renderPost() {
     } else $('#gallery').innerHTML = i.items.map((x, n) => {
       const pic = x.thumb ? `<img src="${esc(x.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : svg(x.kind === 'audio' ? 'music' : 'image', 30, 1.6);
       const action = x.kind === 'image'
-        ? `<a class="k" href="${esc(mediaLink(x.url, nameFor(i, n)))}" download>${svg('dl', 15)}Baixar foto</a>`
+        ? `<div class="trow"><a class="k" href="${esc(mediaLink(x.url, nameFor(i, n)))}" download>${svg('dl', 15)}Baixar</a>${CAN_COPY ? `<button class="k icon-btn" type="button" data-copy="${esc(mediaLink(x.url, nameFor(i, n)))}" aria-label="Copiar a foto" title="Copiar a foto">${svg('copy', 16)}</button>` : ''}</div>`
         : `<span class="k">${n === state.sel ? 'Selecionado' : 'Converter'}</span>`;
       return `<div class="tile${n === state.sel && x.kind !== 'image' ? ' sel' : ''}" data-n="${n}" ${x.kind !== 'image' ? 'role="button" tabindex="0"' : ''} style="animation-delay:${n * 40}ms">
         <div class="pic">${pic}${x.kind !== 'image' ? `<span class="play">${svg(x.kind === 'audio' ? 'music' : 'play', 16)}</span>` : ''}<span class="tag">${esc(itemTag(x))}</span></div>
@@ -716,6 +828,8 @@ function subsBlock(it) {
 }
 
 $('#gallery').addEventListener('click', (e) => {
+  const c = e.target.closest('[data-copy]');
+  if (c) return copyImage(c.dataset.copy, c);
   if (e.target.closest('a')) return;
   const t = e.target.closest('.tile[role=button], .trk');
   if (t) selectItem(Number(t.dataset.n));
@@ -885,7 +999,10 @@ async function convertAll(kind, btn) {
   }
 }
 
+const FMT = { jpg: 'JPG', b64: 'Base64', unpack: 'descompactado', md: 'Markdown', docx: 'Word', pptx: 'PowerPoint', xlsx: 'Excel', odt: 'ODT', bin: 'arquivo', audio: 'áudio' };
+const fmtName = (x) => FMT[x] || String(x || '').toUpperCase();
 function jobLabel(j) {
+  if (j.from !== undefined) return `${fmtName(j.from)} → ${fmtName(j.kind)}`;
   const k = j.kind === 'mp4' ? (j.quality ? `MP4 ${j.quality}p` : 'MP4') : j.kind === 'mp3' ? `MP3 ${j.quality}` : j.kind === 'srt' ? 'Legenda' : 'WAV';
   return j.platform ? `${j.platform} · ${k}` : k;
 }
@@ -904,18 +1021,19 @@ function renderJobs() {
   $('#jobs').innerHTML = list.map((j) => {
     const active = ACTIVE.includes(j.status);
     const busy = j.status === 'queued' || (j.status === 'running' && (j.percent >= 100 || j.percent === 0));
-    let ico = 'wait', cls = '', sub = `${jobLabel(j)} · ${esc(j.phase)}`;
+    const lbl = esc(jobLabel(j));
+    let ico = 'wait', cls = '', sub = `${lbl} · ${esc(j.phase)}`;
     if (j.status === 'running') {
       ico = 'run'; cls = 'run';
-      if (j.percent > 0 && j.percent < 100) sub = `${jobLabel(j)} · ${j.speed ? esc(j.speed) : esc(j.phase)}${j.eta ? ' · falta ' + esc(j.eta) : ''}`;
+      if (j.percent > 0 && j.percent < 100) sub = `${lbl} · ${j.speed ? esc(j.speed) : esc(j.phase)}${j.eta ? ' · falta ' + esc(j.eta) : ''}`;
     }
-    if (j.status === 'done') { ico = 'ok'; cls = 'ok'; sub = `${jobLabel(j)} · ${fmtSize(j.size)}`; }
+    if (j.status === 'done') { ico = 'ok'; cls = 'ok'; sub = `${lbl} · ${fmtSize(j.size)}`; }
     if (j.status === 'error') { ico = 'err'; cls = 'err'; sub = esc(j.error); }
-    if (j.status === 'canceled') { ico = 'x'; sub = `${jobLabel(j)} · cancelado`; }
-    if (j.status === 'expired') { ico = 'wait'; sub = `${jobLabel(j)} · expirou`; }
+    if (j.status === 'canceled') { ico = 'x'; sub = `${lbl} · cancelado`; }
+    if (j.status === 'expired') { ico = 'wait'; sub = `${lbl} · expirou`; }
     const pct = j.status === 'running' && j.percent > 0 && j.percent < 100 ? `<span class="job-pct">${j.percent.toFixed(0)}%</span>` : '';
     const action = j.status === 'done'
-      ? `<a class="k icon-btn" href="/api/jobs/${j.id}/file" download aria-label="Baixar">${svg('dl')}</a>`
+      ? `<div class="acts">${j.image && CAN_COPY ? `<button class="k icon-btn" type="button" data-copy="/api/jobs/${esc(j.id)}/file" aria-label="Copiar a imagem" title="Copiar a imagem">${svg('copy', 17)}</button>` : ''}<a class="k icon-btn" href="/api/jobs/${esc(j.id)}/file" download aria-label="Baixar" title="Baixar">${svg('dl')}</a></div>`
       : active ? `<button class="k icon-btn" type="button" data-cancel="${j.id}" aria-label="Cancelar">${svg('x', 16)}</button>` : '';
     return `<div class="job">
       <div class="job-row">
@@ -929,6 +1047,8 @@ function renderJobs() {
 }
 
 $('#jobs').addEventListener('click', async (e) => {
+  const c = e.target.closest('[data-copy]');
+  if (c) return copyImage(c.dataset.copy, c);
   const b = e.target.closest('[data-cancel]');
   if (!b) return;
   b.disabled = true;
@@ -949,19 +1069,25 @@ async function poll() {
   if (polling) return;
   polling = true;
   while (state.jobs.some((j) => ACTIVE.includes(j.status) || j.recheck)) {
-    for (const j of state.jobs.filter((j) => ACTIVE.includes(j.status) || j.recheck)) {
-      try {
-        const upd = await api(`/api/jobs/${j.id}`);
+    // Um pedido só pra lista inteira (antes era um por tarefa: playlist de 200 = 200 pedidos/s).
+    try {
+      const { jobs } = await api('/api/jobs?limit=200');
+      const byId = new Map(jobs.map((x) => [x.id, x]));
+      for (const j of state.jobs.filter((x) => ACTIVE.includes(x.status) || x.recheck)) {
+        const upd = byId.get(j.id);
+        if (!upd) {
+          // Só some da lista do servidor quem expirou (ou é de outro aparelho).
+          if (Date.now() - (j.createdAt || 0) > 10_000) j.status = 'expired';
+          delete j.recheck;
+          continue;
+        }
         const wasDone = j.status === 'done';
         const fresh = !j.recheck;
         Object.assign(j, upd);
         delete j.recheck;
-        if (fresh && !wasDone && j.status === 'done') triggerDownload(`/api/jobs/${j.id}/file`);
-      } catch {
-        j.status = 'expired';
-        delete j.recheck;
+        if (fresh && !wasDone && j.status === 'done' && !j.image) triggerDownload(`/api/jobs/${j.id}/file`);
       }
-    }
+    } catch { /* sem rede ou limite: tenta de novo no próximo ciclo */ }
     saveJobs();
     renderJobs();
     await new Promise((r) => setTimeout(r, 1000));
@@ -992,10 +1118,303 @@ api('/api/jobs?limit=30').then(({ jobs }) => {
   if (state.jobs.length) poll();
 });
 
+// ---------- copiar imagem ----------
+async function asPng(blob) {
+  if (blob.type === 'image/png') return blob;
+  const bmp = await createImageBitmap(blob);
+  const c = document.createElement('canvas');
+  c.width = bmp.width;
+  c.height = bmp.height;
+  c.getContext('2d').drawImage(bmp, 0, 0);
+  return new Promise((r, x) => c.toBlob((b) => (b ? r(b) : x(new Error('png'))), 'image/png'));
+}
+function flash(btn, ok) {
+  const old = btn.innerHTML;
+  btn.innerHTML = svg(ok ? 'ok' : 'err', 17);
+  btn.classList.toggle('done', ok);
+  btn.title = ok ? 'Copiada!' : 'Não deu pra copiar aqui';
+  setTimeout(() => { btn.innerHTML = old; btn.classList.remove('done'); btn.title = 'Copiar a imagem'; }, 1600);
+}
+async function copyImage(url, btn) {
+  try {
+    // O pedido vai junto com o clique (o Safari exige), e a imagem chega depois.
+    const png = (async () => {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('baixar');
+      const b = await r.blob();
+      return asPng(new Blob([b], { type: /\.png($|\?|&)/i.test(url) ? 'image/png' : b.type }));
+    })();
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+    flash(btn, true);
+  } catch {
+    flash(btn, false);
+  }
+}
+
+// ---------- modo: redes | arquivos ----------
+const TAGLINE = { links: 'Vídeos, músicas, fotos e perfis — sem propaganda', files: 'Qualquer arquivo pra qualquer formato — sem propaganda' };
+function moveKnob() {
+  const b = document.querySelector('.seg [aria-selected="true"]');
+  const k = document.querySelector('.seg .knob');
+  if (!b || !b.offsetWidth) return;
+  k.style.width = `${b.offsetWidth}px`;
+  k.style.transform = `translateX(${b.offsetLeft}px)`;
+}
+function setMode(m, { save = true } = {}) {
+  if (m !== 'files') m = 'links';
+  state.mode = m;
+  document.body.classList.toggle('files-mode', m === 'files');
+  document.querySelectorAll('.seg [data-mode]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mode === m)));
+  $('#linksPane').hidden = m !== 'links';
+  $('#filesPane').hidden = m !== 'files';
+  $('#tagline').textContent = TAGLINE[m];
+  $('#emptyText').textContent = m === 'files' ? 'Solta um arquivo pra começar.' : 'Cola um link pra começar.';
+  if (m === 'links') setPlatform(platformOfUrl($('#url').value));
+  else document.documentElement.style.setProperty('--pf', 'var(--ac)');
+  moveKnob();
+  if (save) store('gc-mode', m);
+}
+document.querySelector('.seg').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-mode]');
+  if (b) setMode(b.dataset.mode);
+});
+document.querySelector('.seg').addEventListener('keydown', (e) => {
+  if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  e.preventDefault();
+  setMode(state.mode === 'links' ? 'files' : 'links');
+  document.querySelector('.seg [aria-selected="true"]').focus();
+});
+addEventListener('resize', moveKnob);
+document.fonts?.ready.then(moveKnob);
+
+// ---------- conversor de arquivos ----------
+const MAX_UP = 500 * 1024 * 1024;
+const MAX_FILES = 10;
+const FILE_ICON = { video: 'video', audio: 'music', image: 'image', pdf: 'doc', doc: 'doc', data: 'table', sub: 'doc', text: 'doc', archive: 'box', other: 'file' };
+// Sugestão de formato quando o arquivo chega (o primeiro desta lista que existir pra ele).
+const PREFER = ['mp4', 'mp3', 'jpg', 'png', 'csv', 'json', 'vtt', 'srt', 'pdf', 'html', 'unpack', 'zip'];
+state.files = [];
+state.fileTo = '';
+
+const touch = matchMedia('(pointer: coarse)').matches;
+$('#dropSub').textContent = `ou ${touch ? 'toca' : 'clica'} pra escolher · até 500 MB cada`;
+
+// SVG vira PNG aqui no navegador (desenhar SVG no servidor abriria brecha pra ler arquivos de lá).
+async function rasterSvg(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    let w = img.naturalWidth || 1024;
+    let h = img.naturalHeight || 1024;
+    const k = Math.min(8, Math.max(1, 2048 / Math.max(w, h)));
+    w = Math.round(w * k);
+    h = Math.round(h * k);
+    if (w * h > 64e6) throw new Error('SVG grande demais.');
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+    if (!blob) throw new Error('Não consegui ler esse SVG.');
+    return new File([blob], `${file.name.replace(/\.svg$/i, '')}.png`, { type: 'image/png' });
+  } catch (e) {
+    throw new Error(e.message === 'SVG grande demais.' ? e.message : 'Não consegui ler esse SVG.');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function sendFile(e, file, hint) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    e.xhr = x;
+    x.open('POST', '/api/upload');
+    x.setRequestHeader('x-file-name', encodeURIComponent(e.name));
+    if (hint) x.setRequestHeader('x-source-format', hint);
+    x.upload.onprogress = (ev) => {
+      if (!ev.lengthComputable) return;
+      e.pct = (ev.loaded / ev.total) * 100;
+      const row = document.querySelector(`.fitem[data-key="${e.key}"]`);
+      if (row) {
+        row.querySelector('.fbar i').style.width = `${e.pct}%`;
+        row.querySelector('.job-sub').textContent = e.pct >= 100 ? 'Analisando…' : `Enviando… ${Math.round(e.pct)}%`;
+      }
+    };
+    x.onload = () => {
+      let j = {};
+      try { j = JSON.parse(x.responseText); } catch {}
+      if (x.status >= 200 && x.status < 300) resolve(j);
+      else reject(new Error(j.error || `Erro ${x.status}`));
+    };
+    x.onerror = () => reject(new Error('A conexão caiu no meio do envio.'));
+    x.onabort = () => reject(new Error('cancelado'));
+    x.send(file);
+  });
+}
+
+function addFiles(list) {
+  setMode('files');
+  const room = MAX_FILES - state.files.length;
+  const arr = [...list].slice(0, Math.max(0, room));
+  if (list.length > arr.length) alert(`Até ${MAX_FILES} arquivos por vez.`);
+  for (const f of arr) {
+    const e = { key: Math.random().toString(36).slice(2), name: f.name || `colado.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, size: f.size, status: 'up', pct: 0 };
+    state.files.push(e);
+    (async () => {
+      try {
+        let send = f;
+        let hint = '';
+        if (f.type === 'image/svg+xml' || /\.svg$/i.test(e.name)) {
+          send = await rasterSvg(f);
+          hint = 'svg';
+        }
+        if (send.size > MAX_UP) throw new Error('Grande demais: o máximo é 500 MB.');
+        if (!send.size) throw new Error('Esse arquivo está vazio.');
+        e.info = await sendFile(e, send, hint);
+        e.status = 'ok';
+      } catch (err) {
+        if (err.message === 'cancelado') return;
+        e.status = 'err';
+        e.error = err.message;
+      }
+      e.xhr = null;
+      renderFiles();
+    })();
+  }
+  renderFiles();
+}
+
+// Formatos que servem pra todos os arquivos prontos (na ordem e nos grupos do primeiro).
+function commonTargets(ready) {
+  if (!ready.length) return [];
+  const sets = ready.slice(1).map((e) => new Set(e.info.targets.map((t) => t.to)));
+  return ready[0].info.targets.filter((t) => sets.every((st) => st.has(t.to)));
+}
+
+function renderFiles() {
+  const list = state.files;
+  $('#drop').classList.toggle('mini', list.length > 0);
+  $('#dropTitle').textContent = list.length ? 'Adicionar mais' : 'Solta os arquivos aqui';
+  $('#dropSub').textContent = list.length ? `ou ${touch ? 'toca' : 'clica'} pra escolher` : `ou ${touch ? 'toca' : 'clica'} pra escolher · até 500 MB cada`;
+  $('#fileHint').hidden = list.length > 0;
+  $('#fileList').innerHTML = list.map((e) => {
+    const cls = e.status === 'err' ? 'err' : e.status === 'up' ? 'run' : '';
+    const ico = e.status === 'err' ? 'err' : FILE_ICON[e.info?.kind] || 'file';
+    const sub = e.status === 'up' ? (e.pct >= 100 ? 'Analisando…' : `Enviando… ${Math.round(e.pct)}%`)
+      : e.status === 'err' ? esc(e.error) : `${esc(e.info.desc)} · ${fmtSize(e.size)}`;
+    return `<div class="fitem" data-key="${e.key}">
+      <div class="job-ico ${cls}">${svg(ico)}</div>
+      <div class="job-main"><div class="job-name">${esc(e.name)}</div><div class="job-sub${e.status === 'err' ? ' err' : ''}">${sub}</div>
+        ${e.status === 'up' ? `<div class="fbar"><i style="width:${e.pct}%"></i></div>` : ''}</div>
+      <button class="k icon-btn" type="button" data-rm="${e.key}" aria-label="Tirar ${esc(e.name)}" title="Tirar">${svg('x', 15)}</button>
+    </div>`;
+  }).join('');
+
+  const ready = list.filter((e) => e.status === 'ok');
+  const flat = commonTargets(ready);
+  $('#fileConv').hidden = ready.length === 0;
+  if (!ready.length) return;
+  if (!flat.length) {
+    $('#targets').innerHTML = '<p class="note mut" style="margin:0">Esses arquivos não têm um formato em comum. Converte um tipo de cada vez.</p>';
+    $('#fileGo').hidden = true;
+    return;
+  }
+  if (!flat.some((t) => t.to === state.fileTo)) state.fileTo = (PREFER.map((p) => flat.find((t) => t.to === p)).find(Boolean) || flat[0]).to;
+  const groups = [];
+  for (const t of flat) {
+    let g = groups.find((x) => x.name === t.group);
+    if (!g) groups.push(g = { name: t.group, list: [] });
+    g.list.push(t);
+  }
+  $('#targets').innerHTML = groups.map((g) => `<div class="fgroup"><p class="label mut">${esc(g.name)}</p><div class="chips">${g.list.map((t) =>
+    `<button class="k" type="button" data-to="${esc(t.to)}" aria-pressed="${t.to === state.fileTo}">${esc(t.label)}</button>`).join('')}</div></div>`).join('');
+  const cur = flat.find((t) => t.to === state.fileTo);
+  const n = ready.length > 1 ? `${ready.length} arquivos ` : '';
+  $('#fileGo').hidden = false;
+  $('#fileGo').disabled = list.some((e) => e.status === 'up');
+  $('#fileGo').innerHTML = `${svg('dl', 20, 2.4)}${cur.to === 'unpack' ? `Descompactar ${n}`.trim() : `Converter ${n}pra ${esc(cur.label)}`}`;
+}
+
+$('#fileIn').addEventListener('change', (e) => {
+  if (e.target.files.length) addFiles(e.target.files);
+  e.target.value = '';
+});
+$('#drop').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#fileIn').click(); }
+});
+$('#fileList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-rm]');
+  if (!b) return;
+  const i = state.files.findIndex((x) => x.key === b.dataset.rm);
+  if (i < 0) return;
+  const [f] = state.files.splice(i, 1);
+  f.xhr?.abort();
+  if (f.info?.id) api(`/api/upload/${f.info.id}`, { method: 'DELETE' }).catch(() => {});
+  renderFiles();
+});
+$('#targets').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-to]');
+  if (!b) return;
+  state.fileTo = b.dataset.to;
+  renderFiles();
+});
+$('#fileGo').addEventListener('click', async () => {
+  const btn = $('#fileGo');
+  btn.disabled = true;
+  const fails = [];
+  for (const e of state.files.filter((x) => x.status === 'ok')) {
+    try {
+      const job = await api('/api/jobs', { method: 'POST', body: JSON.stringify({ upload: e.info.id, to: state.fileTo }) });
+      state.jobs.unshift(job);
+    } catch (err) {
+      fails.push(`${e.name}: ${err.message}`);
+      if (/não está mais/.test(err.message)) { e.status = 'err'; e.error = err.message; }
+    }
+  }
+  saveJobs();
+  renderJobs();
+  poll();
+  renderFiles();
+  if (fails.length) alert(fails.join('\n'));
+  // No celular a lista de conversões fica embaixo: rola até ela.
+  else if (matchMedia('(max-width: 999px)').matches) document.querySelector('.jobs').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+// Soltar arquivo em qualquer lugar da página (em qualquer aba) leva pro conversor de arquivos.
+let dragN = 0;
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+addEventListener('dragenter', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  if (++dragN === 1) $('#dropover').hidden = false;
+});
+addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+addEventListener('dragleave', (e) => {
+  if (!hasFiles(e)) return;
+  if (--dragN <= 0) { dragN = 0; $('#dropover').hidden = true; }
+});
+addEventListener('drop', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragN = 0;
+  $('#dropover').hidden = true;
+  if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+});
+// Colar (Ctrl+V) uma imagem ou arquivo também.
+document.addEventListener('paste', (e) => {
+  const files = [...(e.clipboardData?.files || [])];
+  if (!files.length) return;
+  e.preventDefault();
+  addFiles(files);
+});
+
 // Aceita ?url=... (e o "Compartilhar" do celular quando instalado como app)
 const qs = new URLSearchParams(location.search);
-const shared = (qs.get('url') || qs.get('text') || '').match(/https?:\/\/\S+/);
-if (shared) { $('#url').value = shared[0]; lookup(shared[0]); history.replaceState(null, '', '/'); }
+const shared = cleanUrl(qs.get('url') || qs.get('text') || '');
+setMode(/^https?:\/\//.test(shared) ? 'links' : load('gc-mode', 'links'), { save: false });
+if (/^https?:\/\//.test(shared)) { $('#url').value = shared; lookup(shared); history.replaceState(null, '', '/'); }
 </script>
 </body>
 </html>

@@ -7,7 +7,8 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { Readable } = require('node:stream');
+const { Readable, Transform } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const providers = require('./providers');
 const proc = require('./lib/proc');
 const { Store } = require('./lib/store');
@@ -15,6 +16,11 @@ const { Auth } = require('./lib/auth');
 const cookieFiles = require('./lib/cookies');
 const { systemChecks, disk } = require('./lib/health');
 const { YtWorker } = require('./lib/ytworker');
+const convert = require('./lib/convert');
+
+// Tudo que o servidor cria (downloads, envios, banco) fica só pro dono do processo (tem outro
+// usuário na VPS).
+if (require.main === module) process.umask(0o077);
 
 const PORT = Number(process.env.PORT || 5180);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -44,6 +50,14 @@ const JOB_IDLE_MS = Number(process.env.JOB_IDLE_MIN || 10) * 60_000;
 const MIN_FREE_BYTES = Number(process.env.MIN_FREE_GB || 2) * 1024 ** 3;
 const MAX_ATTEMPTS = 3; // reinícios no meio de uma tarefa antes de desistir dela
 const PLAYLIST_PAGE = 200;
+// Conversor de arquivos: tamanho máximo de cada envio.
+const UPLOAD_MAX = Number(process.env.UPLOAD_MAX_MB || 500) * 1024 ** 2;
+const UPLOAD_ID_RE = /^u[0-9a-f]{16}$/;
+// Buscas no yt-dlp ao mesmo tempo (o resto espera a vez): segura abuso sem travar o uso normal.
+const MAX_INFO = Number(process.env.MAX_INFO || 4);
+const INFO_CACHE_MAX = 400;
+const MAX_ACTIVE_PER_IP = 300; // "baixar todas" de uma playlist de 200 cabe
+const MAX_QUEUE = 1000;
 
 const MP3_BITRATES = ['128', '192', '256', '320'];
 const THUMBS = [
@@ -74,6 +88,8 @@ const hostIn = (host, list) => list.some((d) => host === d || host.endsWith(`.${
 const jobs = new Map();
 const infoCache = new Map();
 const infoPending = new Map(); // mesma busca ao mesmo tempo = uma extração só
+const uploads = new Map(); // id -> { id, device, name, size, at, src } (também em meta.json na pasta)
+const uploadingNow = new Map(); // aparelho -> envios em andamento
 // JSON completo do yt-dlp de cada vídeo buscado (url -> { at, raw, proxied }): o download usa
 // ele com --load-info-json e não precisa extrair tudo de novo (~10 s a menos por download).
 const rawInfo = new Map();
@@ -177,14 +193,29 @@ function baseArgs(url) {
   return args;
 }
 
+// Caracteres invisíveis que o celular põe ao copiar/compartilhar (espaço zero, marcas de direção).
+const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
+
+// Aceita o link sozinho ou no meio de um texto ("Olha esse post: https://x.com/... via @fulano"),
+// e link sem https:// ("x.com/fulano/status/123").
+function extractUrl(raw) {
+  const s = String(raw || '').replace(INVISIBLE, '').trim();
+  let found = (s.match(/https?:\/\/[^\s<>"'“”‘’]+/i) || [])[0];
+  if (!found) {
+    const bare = (s.match(/(?:^|\s)((?:[a-z0-9-]+\.)+[a-z]{2,}\/[^\s<>"'“”‘’]*)/i) || [])[1];
+    if (bare) found = `https://${bare}`;
+  }
+  return (found || s).replace(/[)\].,;:!?…»]+$/, '');
+}
+
 function normalizeUrl(raw) {
   let u;
   try {
-    u = new URL(String(raw || '').trim());
+    u = new URL(extractUrl(raw));
   } catch {
     return null;
   }
-  if (!/^https?:$/.test(u.protocol)) return null;
+  if (!/^https?:$/.test(u.protocol) || u.username || u.password || (u.port && !['80', '443'].includes(u.port))) return null;
   if (!YT_HOSTS.test(u.hostname) && !hostIn(u.hostname.toLowerCase(), OTHER_HOSTS)) return null;
   return u.toString();
 }
@@ -207,7 +238,7 @@ function friendlyError(stderr) {
   if (/live event will begin|is not a valid URL|Premieres in/i.test(s)) return 'Essa live/estreia ainda não começou.';
   if (/Requested format is not available/i.test(s)) return 'Essa qualidade não está disponível pra esse vídeo.';
   const last = s.trim().split('\n').filter((l) => l.startsWith('ERROR')).pop();
-  return last ? last.replace(/^ERROR:\s*(\[[^\]]+\]\s*)?/, '') : 'Deu erro na conversão.';
+  return last ? redact(last.replace(/^ERROR:\s*(\[[^\]]+\]\s*)?/, '')).replace(/(?:\/(?:home|tmp|root|var|etc|usr)\/|[A-Z]:\\)[^\s'"]*/g, '…').slice(0, 300) : 'Deu erro na conversão.';
 }
 
 // Tira de mensagens de log o que pode ser segredo: query strings (URLs assinadas), cookies, tokens.
@@ -282,14 +313,32 @@ async function getInfo(url, page = 0) {
   if (hit && Date.now() - hit.at < INFO_TTL_MS) return hit.info;
   if (infoPending.has(key)) return infoPending.get(key);
 
-  const p = resolveInfo(url, page)
+  const p = withInfoSlot(() => resolveInfo(url, page))
     .then((info) => {
       infoCache.set(key, { at: Date.now(), info });
+      while (infoCache.size > INFO_CACHE_MAX) infoCache.delete(infoCache.keys().next().value);
       return info;
     })
     .finally(() => infoPending.delete(key));
   infoPending.set(key, p);
   return p;
+}
+
+// Vagas de busca: no máximo MAX_INFO yt-dlp buscando ao mesmo tempo; fila de espera limitada.
+const infoSlots = { free: MAX_INFO, waiters: [] };
+async function withInfoSlot(fn) {
+  if (infoSlots.free > 0) infoSlots.free--;
+  else {
+    if (infoSlots.waiters.length >= 60) throw new Error('O servidor está muito ocupado agora. Tenta de novo em um minuto.');
+    await new Promise((r) => infoSlots.waiters.push(r));
+  }
+  try {
+    return await fn();
+  } finally {
+    const next = infoSlots.waiters.shift();
+    if (next) next();
+    else infoSlots.free++;
+  }
 }
 
 // Legendas que o yt-dlp achou: as enviadas pelo autor primeiro; das automáticas, só a do idioma
@@ -490,7 +539,8 @@ function jobArgs(job) {
     '--print', 'after_move:@@F %(filepath)s',
     '--windows-filenames',
     '-P', job.dir,
-    '-o', job.mode === 'search' || job.named ? `${safeName(job.title)}.%(ext)s` : '%(title).150B.%(ext)s',
+    // % no título seria lido como campo do yt-dlp (%(http_headers)s etc.): vira %% (um % literal).
+    '-o', job.mode === 'search' || job.named ? `${safeName(job.title).replace(/%/g, '%%')}.%(ext)s` : '%(title).150B.%(ext)s',
   ];
   const subs = job.opts?.subs;
   const subArgs = subs ? [subs.auto ? '--write-auto-subs' : '--write-subs', '--sub-langs', subs.lang] : [];
@@ -546,8 +596,13 @@ function publicJob(job) {
     size: job.size || 0,
     createdAt: job.createdAt,
     finishedAt: job.finishedAt || 0,
+    // Conversão de arquivo: de que formato veio e se o resultado é imagem (botão de copiar).
+    ...(job.mode === 'file' ? { from: job.opts?.src?.from || job.opts?.src?.ext || '', image: Boolean(job.file) && convert.IMAGE_OUT.has(path.extname(job.file).slice(1).toLowerCase()) } : {}),
   };
 }
+
+// Arquivo dentro da pasta da tarefa (nunca um caminho que escapou dela).
+const inside = (file, dir) => path.resolve(file).startsWith(path.resolve(dir) + path.sep);
 
 // Grava no banco; progresso no máximo a cada 3 s (o resto grava na hora).
 function persist(job, { progress = false } = {}) {
@@ -597,7 +652,7 @@ function finishJob(job, r) {
     return;
   }
 
-  if (job.kind === 'srt' && r.code === 0 && !job.file) {
+  if (job.kind === 'srt' && job.mode !== 'file' && r.code === 0 && !job.file) {
     const sub = fs.existsSync(job.dir) && fs.readdirSync(job.dir).find((f) => /\.(srt|vtt|ass)$/i.test(f));
     if (sub) job.file = path.join(job.dir, sub);
   }
@@ -605,7 +660,7 @@ function finishJob(job, r) {
   if (job.status === 'canceled') {
     fs.rmSync(job.dir, { recursive: true, force: true });
     job.phase = 'Cancelado';
-  } else if (r.code === 0 && job.file && fs.existsSync(job.file)) {
+  } else if (r.code === 0 && job.file && inside(job.file, job.dir) && fs.existsSync(job.file) && fs.statSync(job.file).isFile()) {
     job.status = 'done';
     if (isYouTubeJob(job)) ytState.lastOkAt = Date.now();
     job.phase = 'Pronto';
@@ -614,6 +669,7 @@ function finishJob(job, r) {
   } else {
     job.status = 'error';
     job.error = r.error ? 'Não consegui iniciar o programa de download no servidor.'
+      : job.mode === 'file' && !r.timedOut && !r.idle ? convert.friendly(r.stderr)
       : r.timedOut ? 'Demorou demais e foi interrompido.'
         : r.idle ? 'Travou sem progresso e foi interrompido.'
           : job.kind === 'srt' && r.code === 0 ? 'Esse vídeo não tem legenda nesse idioma.'
@@ -653,6 +709,27 @@ function startDirectJob(job) {
   h.done.then((r) => finishJob(job, r));
 }
 
+// Arquivo enviado: converte com o programa certo (lib/convert.js).
+function startFileJob(job) {
+  const id = job.opts?.upload;
+  const input = UPLOAD_ID_RE.test(id || '') ? path.join(DOWNLOAD_DIR, id, 'in') : '';
+  if (!input || !fs.existsSync(input)) return finishJob(job, { code: 1, stderr: 'ERRO: O arquivo enviado já expirou. Envia de novo.' });
+  job.phase = 'Convertendo';
+  persist(job);
+  const h = convert.run({
+    info: job.opts.src, to: job.kind, input, dir: job.dir, base: safeName(job.title), name: job.opts.name || 'arquivo',
+    onProgress: (p) => {
+      job.percent = p;
+      persist(job, { progress: true });
+    },
+  });
+  job.stop = h.stop;
+  h.done.then((r) => {
+    if (r.file) job.file = r.file;
+    finishJob(job, r);
+  });
+}
+
 async function startJob(job) {
   running++;
   job.finished = false;
@@ -663,6 +740,7 @@ async function startJob(job) {
   fs.mkdirSync(job.dir, { recursive: true });
   persist(job);
   if (job.mode === 'direct') return startDirectJob(job);
+  if (job.mode === 'file') return startFileJob(job);
   // Tem a busca guardada: baixa direto dela, sem esperar a vez no YouTube.
   if (job.preload) {
     const file = path.join(job.dir, '.busca.info.json');
@@ -762,10 +840,10 @@ function runYtdlpJob(job) {
   });
 }
 
-function createJob({ mode = 'native', url, index = null, named = false, duration = 0, kind, quality, title, opts = {}, platform = '', device = null, preload = null }) {
+function createJob({ mode = 'native', url, index = null, named = false, duration = 0, kind, quality, title, opts = {}, platform = '', device = null, preload = null, ip = '' }) {
   const id = crypto.randomBytes(8).toString('hex');
   const job = {
-    id, mode, url, index, named, duration, kind, quality, title: String(title || '').slice(0, 300), opts, platform, device, preload,
+    id, mode, url, index, named, duration, kind, quality, title: String(title || '').slice(0, 300), opts, platform, device, preload, ip,
     dir: path.join(DOWNLOAD_DIR, id),
     status: 'queued', phase: 'Na fila', percent: 0, lastPct: 0, speed: '', eta: '',
     error: null, file: null, size: 0, attempts: 0, createdAt: Date.now(), startedAt: 0, finishedAt: 0, proc: null,
@@ -854,6 +932,7 @@ function cleanup(now = Date.now()) {
   store.prune(now - HISTORY_MS);
   for (const [key, hit] of infoCache) if (now - hit.at > INFO_TTL_MS) infoCache.delete(key);
   for (const [key, hit] of rawInfo) if (now - hit.at > INFO_TTL_MS) rawInfo.delete(key);
+  for (const [id, u] of uploads) if (now - u.at > JOB_TTL_MS) uploads.delete(id);
 }
 
 setInterval(() => {
@@ -875,11 +954,46 @@ const MIME = {
   '.webmanifest': 'application/manifest+json',
 };
 
-const SECURITY_HEADERS = {
+// Cabeçalhos de proteção em TODA resposta. HSTS: navegador só fala HTTPS com o site.
+const BASE_HEADERS = {
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
   'x-frame-options': 'DENY',
+  'strict-transport-security': 'max-age=63072000; includeSubDomains',
+  'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-resource-policy': 'same-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=(), hid=(), browsing-topics=()',
+  'x-permitted-cross-domain-policies': 'none',
 };
+// Respostas que não são página (JSON, arquivos): nada roda nem se aninha nelas.
+const SECURITY_HEADERS = { ...BASE_HEADERS, 'content-security-policy': "default-src 'none'; frame-ancestors 'none'; sandbox" };
+
+// Páginas: só os scripts escritos nelas rodam (hash de cada <script>), nada de script de fora.
+const pageCache = new Map();
+function htmlPage(file) {
+  const mtime = fs.statSync(file).mtimeMs;
+  const hit = pageCache.get(file);
+  if (hit && hit.mtime === mtime) return hit;
+  const body = fs.readFileSync(file);
+  const hashes = [...body.toString('utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => `'sha256-${crypto.createHash('sha256').update(m[1], 'utf8').digest('base64')}'`);
+  const csp = [
+    "default-src 'none'",
+    `script-src ${hashes.length ? hashes.join(' ') : "'none'"}`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    'font-src https://fonts.gstatic.com',
+    "img-src 'self' data: blob: https:",
+    "media-src 'self' blob:",
+    "connect-src 'self'",
+    "manifest-src 'self'",
+    "form-action 'self'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+  ].join('; ');
+  const page = { mtime, body, csp };
+  pageCache.set(file, page);
+  return page;
+}
 
 function sendJson(res, status, body, headers = {}) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...SECURITY_HEADERS, ...headers });
@@ -912,19 +1026,39 @@ function readJson(req, max = 10_000) {
   });
 }
 
-function serveStatic(req, res, pathname) {
-  const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
+// Páginas de administração só pelos caminhos delas (/entrar, /renovar), nunca pelo .html direto.
+const PRIVATE_PAGES = new Set(['entrar.html', 'renovar.html']);
+
+function serveStatic(req, res, pathname, { page = null } = {}) {
+  let rel = page;
+  if (!rel) {
+    try {
+      rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname.slice(1));
+    } catch {
+      rel = '';
+    }
+  }
   const file = path.join(PUBLIC_DIR, rel);
-  if (!file.startsWith(PUBLIC_DIR + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
-    res.writeHead(404, SECURITY_HEADERS).end('Not found');
+  const hidden = !page && (PRIVATE_PAGES.has(rel) || rel.split(/[\\/]/).some((x) => x.startsWith('.')) || rel.includes('\0'));
+  if (hidden || !rel || !file.startsWith(PUBLIC_DIR + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+    res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS }).end('Not found');
     return;
   }
-  res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', ...SECURITY_HEADERS });
+  const ext = path.extname(file);
+  // Página e manifesto: sempre confere se mudou (o app instalado no celular atualiza sozinho).
+  const cache = ext === '.html' || ext === '.webmanifest' ? 'no-cache' : 'public, max-age=86400';
+  if (ext === '.html') {
+    const p = htmlPage(file);
+    res.writeHead(200, { 'content-type': MIME[ext], 'cache-control': cache, ...BASE_HEADERS, 'content-security-policy': p.csp });
+    return res.end(req.method === 'HEAD' ? undefined : p.body);
+  }
+  res.writeHead(200, { 'content-type': MIME[ext] || 'application/octet-stream', 'cache-control': cache, ...SECURITY_HEADERS });
   if (req.method === 'HEAD') return res.end();
   fs.createReadStream(file).on('error', () => res.destroy()).pipe(res);
 }
 
 function serveFile(req, res, job) {
+  if (!inside(job.file, path.join(DOWNLOAD_DIR, job.id))) return sendJson(res, 404, { error: 'Arquivo não está pronto.' });
   const stat = fs.statSync(job.file);
   const name = path.basename(job.file);
   const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
@@ -956,7 +1090,7 @@ async function serveMedia(req, res, params) {
   } catch {
     return sendJson(res, 400, { error: 'Link inválido.' });
   }
-  if (u.protocol !== 'https:' || !hostIn(u.hostname.toLowerCase(), MEDIA_HOSTS)) return sendJson(res, 400, { error: 'Host não permitido.' });
+  if (u.protocol !== 'https:' || u.username || u.password || (u.port && u.port !== '443') || !hostIn(u.hostname.toLowerCase(), MEDIA_HOSTS)) return sendJson(res, 400, { error: 'Host não permitido.' });
 
   const ac = new AbortController();
   req.on('close', () => ac.abort());
@@ -979,6 +1113,115 @@ async function serveMedia(req, res, params) {
 }
 
 const clientIp = (req) => req.headers['x-real-ip'] || req.socket.remoteAddress;
+
+// Limite de pedidos por IP (janela fixa). Barato e suficiente contra robô martelando a API.
+const hits = new Map();
+function tooMany(req, res, name, max, windowMs) {
+  const key = `${name}:${clientIp(req)}`;
+  const now = Date.now();
+  let e = hits.get(key);
+  if (!e || now >= e.reset) {
+    e = { n: 0, reset: now + windowMs };
+    hits.set(key, e);
+  }
+  if (++e.n <= max) return false;
+  sendJson(res, 429, { error: 'Muitos pedidos seguidos. Espera um pouquinho e tenta de novo.' }, { 'retry-after': String(Math.ceil((e.reset - now) / 1000)), connection: 'close' });
+  req.resume();
+  return true;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, e] of hits) if (now >= e.reset) hits.delete(k);
+}, 60_000).unref();
+
+// ---------- envio de arquivos (conversor) ----------
+
+function cleanFileName(raw) {
+  let n = String(raw || '');
+  try {
+    n = decodeURIComponent(n);
+  } catch { /* nome sem codificação: usa como veio */ }
+  n = n.replace(INVISIBLE, '').split(/[\\/]/).pop() || '';
+  n = n.replace(/[\x00-\x1f\x7f<>:"|?*%]/g, '_').replace(/^[.\s]+/, '').trim();
+  if (n.length > 120) n = n.slice(0, 100) + n.slice(-20);
+  return n || 'arquivo';
+}
+
+const uploadView = (m) => ({
+  id: m.id, name: m.name, size: m.size, kind: m.src.from === 'svg' ? 'image' : m.src.kind, ext: m.src.from || m.src.ext,
+  desc: convert.describe(m.src), targets: convert.targets(m.src),
+});
+
+function uploadOf(id, device) {
+  if (!UPLOAD_ID_RE.test(String(id || ''))) return null;
+  let m = uploads.get(id);
+  if (!m) {
+    try {
+      m = JSON.parse(fs.readFileSync(path.join(DOWNLOAD_DIR, id, 'meta.json'), 'utf8'));
+    } catch {
+      return null;
+    }
+    if (m.id !== id) return null;
+    uploads.set(id, m);
+  }
+  if (!device || m.device !== device || Date.now() - m.at > JOB_TTL_MS || !fs.existsSync(path.join(DOWNLOAD_DIR, id, 'in'))) return null;
+  return m;
+}
+
+// Recebe o arquivo em streaming direto pro disco (nunca inteiro na memória), com limite de tamanho.
+async function receiveUpload(req, res, device) {
+  const bail = (status, error) => {
+    sendJson(res, status, { error }, { connection: 'close' });
+    req.resume();
+  };
+  if (shuttingDown) return bail(503, 'O servidor está reiniciando. Tenta de novo em alguns segundos.');
+  const len = Number(req.headers['content-length']);
+  if (!Number.isSafeInteger(len) || len <= 0) return bail(411, 'Não consegui ler o tamanho do arquivo. Tenta de novo.');
+  if (len > UPLOAD_MAX) return bail(413, `Arquivo grande demais: o máximo é ${Math.round(UPLOAD_MAX / 1024 ** 2)} MB.`);
+  if (disk(DOWNLOAD_DIR).freeBytes < MIN_FREE_BYTES + len * 3) return bail(507, 'O servidor está sem espaço agora. Tenta mais tarde.');
+  if ((uploadingNow.get(device) || 0) >= 3) return bail(429, 'Espera os envios que já estão indo terminarem.');
+  let recent = 0;
+  for (const u of uploads.values()) if (u.device === device && Date.now() - u.at < JOB_TTL_MS) recent++;
+  if (recent >= 80) return bail(429, 'Muitos arquivos nessa última hora. Espera um pouco.');
+
+  const name = cleanFileName(req.headers['x-file-name']);
+  const id = `u${crypto.randomBytes(8).toString('hex')}`;
+  const dir = path.join(DOWNLOAD_DIR, id);
+  const file = path.join(dir, 'in');
+  fs.mkdirSync(dir, { mode: 0o700 });
+  uploadingNow.set(device, (uploadingNow.get(device) || 0) + 1);
+  let got = 0;
+  try {
+    const count = new Transform({
+      transform(c, _e, cb) {
+        got += c.length;
+        cb(got > len ? new Error('maior que o anunciado') : null, c);
+      },
+    });
+    await pipeline(req, count, fs.createWriteStream(file, { mode: 0o600, flags: 'wx' }));
+    if (got !== len) throw new Error('incompleto');
+  } catch {
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (!res.headersSent && !res.destroyed) bail(400, 'O envio foi interrompido. Tenta de novo.');
+    return undefined;
+  } finally {
+    const n = (uploadingNow.get(device) || 1) - 1;
+    if (n > 0) uploadingNow.set(device, n);
+    else uploadingNow.delete(device);
+  }
+
+  let src;
+  try {
+    src = await convert.detect(file, name, { hint: req.headers['x-source-format'] === 'svg' ? 'svg' : '' });
+  } catch {
+    fs.rmSync(dir, { recursive: true, force: true });
+    return sendJson(res, 400, { error: 'Não consegui ler esse arquivo.' });
+  }
+  const meta = { id, device, name, size: got, at: Date.now(), src };
+  fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta), { mode: 0o600 });
+  uploads.set(id, meta);
+  return sendJson(res, 201, uploadView(meta));
+}
 
 // Troca o cookies.txt do YouTube pela página /renovar: valida ANTES de trocar.
 async function renewCookies(req, res) {
@@ -1065,6 +1308,15 @@ async function handle(req, res) {
     if (!ok) return sendJson(res, 403, { error: 'Origem não permitida.' });
   }
 
+  // Limites por IP (o nginx também limita; aqui é a segunda camada).
+  if (pathname.startsWith('/api/')) {
+    if (tooMany(req, res, 'api', 1200, 60_000)) return undefined;
+    if (pathname === '/api/info' && tooMany(req, res, 'info', 40, 60_000)) return undefined;
+    if (pathname === '/api/jobs' && req.method === 'POST' && tooMany(req, res, 'jobs', 240, 60_000)) return undefined;
+    if (pathname === '/api/upload' && req.method === 'POST' && tooMany(req, res, 'upload', 60, 10 * 60_000)) return undefined;
+    if ((pathname === '/api/media' || pathname === '/api/image') && tooMany(req, res, 'media', 300, 60_000)) return undefined;
+  }
+
   if (pathname === '/health') {
     // Público: só "tá vivo". Detalhe só pra quem está na própria VPS (script de update, checagens).
     if (isLocal(req)) return sendJson(res, 200, await statusPayload());
@@ -1078,7 +1330,7 @@ async function handle(req, res) {
     auth.clearAttempts(`login:${clientIp(req)}`);
     return sendJson(res, 200, { ok: true }, { 'set-cookie': auth.cookieHeader(auth.newSession(), req) });
   }
-  if (pathname === '/entrar') return serveStatic(req, res, '/entrar.html');
+  if (pathname === '/entrar') return serveStatic(req, res, pathname, { page: 'entrar.html' });
 
   const admin = Boolean(auth.sessionFrom(req)) || auth.checkToken(bearer);
   if (ADMIN_PATHS.has(pathname) && !admin) {
@@ -1098,9 +1350,9 @@ async function handle(req, res) {
   }
 
   // A página já sai com o id do aparelho, antes de qualquer conversão.
-  const device = pathname === '/' || pathname.startsWith('/api/jobs') ? deviceOf(req, res) : null;
+  const device = pathname === '/' || pathname.startsWith('/api/jobs') || pathname.startsWith('/api/upload') ? deviceOf(req, res) : null;
 
-  if (pathname === '/renovar') return serveStatic(req, res, '/renovar.html');
+  if (pathname === '/renovar') return serveStatic(req, res, pathname, { page: 'renovar.html' });
 
   if (pathname === '/api/cookies' && req.method === 'POST') return renewCookies(req, res);
 
@@ -1129,9 +1381,39 @@ async function handle(req, res) {
     return sendJson(res, 200, { jobs: list });
   }
 
+  if (pathname === '/api/upload' && req.method === 'POST') return receiveUpload(req, res, device);
+  const up = pathname.match(/^\/api\/upload\/(u[0-9a-f]{16})$/);
+  if (up && req.method === 'DELETE') {
+    const meta = uploadOf(up[1], device);
+    // Só apaga o original enviado; conversões já feitas dele continuam na lista.
+    if (meta && ![...jobs.values()].some((j) => j.opts?.upload === meta.id && ACTIVE.has(j.status))) {
+      fs.rmSync(path.join(DOWNLOAD_DIR, meta.id), { recursive: true, force: true });
+      uploads.delete(meta.id);
+    }
+    return sendJson(res, 200, { ok: true });
+  }
+
   if (pathname === '/api/jobs' && req.method === 'POST') {
     if (shuttingDown) return sendJson(res, 503, { error: 'O servidor está reiniciando. Tenta de novo em alguns segundos.' });
     const body = await readJson(req).catch(() => ({}));
+    const ip = clientIp(req);
+    let mine = 0;
+    for (const j of jobs.values()) if (ACTIVE.has(j.status) && j.ip === ip) mine++;
+    if (mine >= MAX_ACTIVE_PER_IP || queue.length >= MAX_QUEUE) return sendJson(res, 429, { error: 'Tem coisa demais na fila agora. Espera algumas terminarem.' });
+
+    // Conversão de arquivo enviado.
+    if (body.upload !== undefined) {
+      const meta = uploadOf(body.upload, device);
+      if (!meta) return sendJson(res, 404, { error: 'Esse arquivo não está mais no servidor. Envia de novo.' });
+      const to = String(body.to || '');
+      if (!convert.targets(meta.src).some((t) => t.to === to)) return sendJson(res, 400, { error: 'Essa conversão não existe pra esse arquivo.' });
+      if (disk(DOWNLOAD_DIR).freeBytes < MIN_FREE_BYTES) return sendJson(res, 507, { error: 'O servidor está sem espaço em disco agora.' });
+      const title = meta.name.replace(/\.[^.]+$/, '') || 'arquivo';
+      return sendJson(res, 201, publicJob(createJob({
+        mode: 'file', url: `arquivo:${meta.id}`, kind: to, quality: null, title, opts: { upload: meta.id, src: meta.src, name: meta.name }, platform: 'Arquivo', device, ip,
+      })));
+    }
+
     const url = normalizeUrl(body.url);
     if (!url) return sendJson(res, 400, { error: 'Esse site ainda não é suportado.' });
     if (isProfileUrl(url)) return sendJson(res, 400, { error: 'Link de perfil não tem vídeo pra converter.' });
@@ -1170,7 +1452,7 @@ async function handle(req, res) {
       quality = MP3_BITRATES.includes(String(body.quality)) ? String(body.quality) : '320';
     }
     const title = String(body.title || info.title || 'arquivo');
-    const common = { kind, quality, title, opts: subs ? { subs } : {}, platform: info.platform || '', device };
+    const common = { kind, quality, title, opts: subs ? { subs } : {}, platform: info.platform || '', device, ip };
     const spec = item.search
       // Música (Spotify, Deezer, Apple Music): baixa a mesma faixa da aba de músicas do YouTube Music.
       ? { ...common, mode: 'search', url: `https://music.youtube.com/search?q=${encodeURIComponent(item.search)}#songs` }
@@ -1214,6 +1496,11 @@ const server = http.createServer((req, res) => {
     else res.destroy();
   });
 });
+// Envio grande pode levar um tempo (celular devagar); cabeçalho tem que chegar rápido.
+server.requestTimeout = 2 * 3600_000;
+server.headersTimeout = 20_000;
+server.keepAliveTimeout = 10_000;
+server.maxHeadersCount = 100;
 
 // Encerramento gracioso: para de aceitar, devolve tarefas em andamento pra fila (continuam no
 // próximo start), mata os processos filhos e fecha o banco.
@@ -1252,4 +1539,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { jobArgs, subsList, redact, normalizeUrl, isPlaylistUrl, server };
+module.exports = { jobArgs, subsList, redact, normalizeUrl, extractUrl, isPlaylistUrl, cleanFileName, server };

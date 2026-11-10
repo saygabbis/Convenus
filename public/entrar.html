@@ -54,7 +54,13 @@
 <script>
 const $ = (s) => document.querySelector(s);
 const next = new URLSearchParams(location.search).get('next') || '/';
-const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/';
+// Só volta pra uma página DESTE site ("/\outro.com" o navegador lê como "//outro.com").
+const safeNext = (() => {
+  try {
+    const u = new URL(next, location.origin);
+    return u.origin === location.origin && /^\/(?![/\\])/.test(next) ? u.pathname + u.search : '/';
+  } catch { return '/'; }
+})();
 $('#form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = $('#go');

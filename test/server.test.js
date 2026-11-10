@@ -237,6 +237,45 @@ test('corpo grande demais é recusado na hora (não fica pendurado)', async () =
   assert.ok(Date.now() - t0 < 3000);
 });
 
+test('conversor de arquivos: envia, converte e baixa; só o mesmo aparelho usa o envio', async () => {
+  const r = await fetch(`${BASE}/api/upload`, { method: 'POST', body: 'nome,idade\nAna,30\n', headers: { cookie, origin: BASE, 'x-file-name': encodeURIComponent('pessoas.csv') } });
+  assert.equal(r.status, 201);
+  const up = await r.json();
+  assert.equal(up.ext, 'csv');
+  assert.ok(up.targets.some((t) => t.to === 'json'));
+  const job = await (await post('/api/jobs', { upload: up.id, to: 'json' })).json();
+  const done = await waitJob(job.id);
+  assert.equal(done.status, 'done', done.error);
+  assert.equal(done.from, 'csv');
+  assert.equal(done.filename, 'pessoas.json');
+  assert.deepEqual(JSON.parse(await (await req(`/api/jobs/${job.id}/file`)).text()), [{ nome: 'Ana', idade: 30 }]);
+  assert.equal((await post('/api/jobs', { upload: up.id, to: 'mp4' })).status, 400);
+  const other = await fetch(`${BASE}/api/jobs`, { method: 'POST', body: JSON.stringify({ upload: up.id, to: 'json' }), headers: { 'content-type': 'application/json', cookie: 'cv_dev=outroAparelhoQualquer1234567' } });
+  assert.equal(other.status, 404);
+});
+
+test('envio maior que o limite é recusado pelo tamanho, sem esperar o arquivo chegar', async () => {
+  const http = require('node:http');
+  const res = await new Promise((resolve, reject) => {
+    const rq = http.request(`${BASE}/api/upload`, { method: 'POST', headers: { cookie, 'content-length': String(600 * 1024 * 1024) } }, resolve);
+    rq.on('error', reject);
+    rq.write('x');
+  });
+  assert.equal(res.statusCode, 413);
+  res.resume();
+});
+
+test('cabeçalhos de segurança, páginas de admin só pelo caminho delas', async () => {
+  const home = await req('/');
+  assert.match(home.headers.get('content-security-policy'), /script-src 'sha256-[^']+'/);
+  assert.doesNotMatch(home.headers.get('content-security-policy'), /unsafe-eval|script-src[^;]*unsafe-inline/);
+  assert.match(home.headers.get('strict-transport-security'), /max-age=\d+/);
+  assert.equal(home.headers.get('cache-control'), 'no-cache');
+  assert.match((await req('/api/status')).headers.get('content-security-policy'), /default-src 'none'/);
+  for (const p of ['/renovar.html', '/entrar.html', '/%2e%2e/server.js']) assert.equal((await req(p)).status, 404, p);
+  assert.equal((await req('/entrar')).status, 200);
+});
+
 test('yt-dlp ausente: erro amigável e o servidor continua de pé', async () => {
   await stop();
   await start({ YTDLP: '/caminho/que/nao/existe/yt-dlp' });
