@@ -11,7 +11,7 @@ const path = require('node:path');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'convenus-sec-'));
 process.env.DATA_DIR = TMP;
 process.env.YTDLP_PROXY = '';
-const { jobArgs, normalizeUrl, cleanFileName } = require('../server.js');
+const { jobArgs, normalizeUrl, cleanFileName, mixId, listOffers, isPlaylistUrl } = require('../server.js');
 
 test.after(() => fs.rmSync(TMP, { recursive: true, force: true }));
 
@@ -41,4 +41,15 @@ test('nome de arquivo enviado: sem pasta, sem caractere de controle, sem %', () 
   assert.equal(cleanFileName('.bashrc'), 'bashrc');
   assert.equal(cleanFileName(''), 'arquivo');
   assert.ok(cleanFileName('a'.repeat(500)).length <= 120);
+});
+
+test('Mix do YouTube: vídeo dentro da Mix oferece a Mix; playlist normal oferece abrir a playlist', () => {
+  const mix = 'https://www.youtube.com/watch?v=L59p6xiAaJs&list=RD_bVSvpXj57c&index=7';
+  assert.equal(mixId(mix), 'RD_bVSvpXj57c');
+  assert.equal(isPlaylistUrl(mix), false, 'continua sendo o vídeo, a Mix é opcional');
+  assert.deepEqual(listOffers(mix, {}), { mix: true });
+  assert.deepEqual(listOffers('https://www.youtube.com/watch?v=L59p6xiAaJs&list=PLabc', {}), { playlistUrl: 'https://www.youtube.com/playlist?list=PLabc' });
+  assert.deepEqual(listOffers('https://www.youtube.com/watch?v=L59p6xiAaJs', {}), {});
+  assert.equal(mixId('https://www.youtube.com/playlist?list=RDabc'), null, 'sem vídeo não é Mix');
+  assert.equal(mixId('https://www.youtube.com/watch?v=x&list=RD"><script>'), null);
 });

@@ -34,9 +34,10 @@ Em produção, o recomendado são os serviços systemd de `deploy/systemd/` (vej
 - **Acesso:** o site é aberto. Só a administração (`/renovar` e `/api/cookies`) pede o código, que fica em `admin.token` (`cat ~/Bots/Convert/admin.token`). Pra trocar o código e deslogar todos os aparelhos: `printf 'novo' > admin.token` e reinicie o site.
 - **Histórico por aparelho:** cada navegador ganha um id aleatório no cookie `cv_dev` (HttpOnly) e só vê, baixa e apaga as próprias conversões. Conversão de outro aparelho responde 404.
 - **Cookies do YouTube:** pela página `/renovar`, no site. Eles nunca vão pro git.
-- **Velocidade:** a busca fica guardada 30 min e o download parte dela (`--load-info-json`, sem cookies), então não extrai tudo de novo nem espera a vez no YouTube. Se o link salvo for recusado, refaz do jeito completo sozinho. Cada busca registra o tempo no log (`[busca] YouTube em X s`). As buscas usam um yt-dlp sempre aberto (`lib/ytdlp_worker.py`, ~1,4 s a menos por busca): um pedido por vez, cookies lidos e gravados a cada pedido como no normal; ocupado, travado ou sem Python, cai pro yt-dlp normal, e recicla sozinho quando o yt-dlp é atualizado. `YTDLP_WORKER=0` desliga.
+- **Velocidade:** a busca fica guardada 30 min e o download parte dela (`--load-info-json`, sem cookies), então não extrai tudo de novo nem espera a vez no YouTube. Se o link salvo for recusado, refaz do jeito completo sozinho. Vídeo do YouTube aparece em ~0,5 s: título e canal pelo oEmbed e capas pelo i.ytimg, enquanto a busca completa (resoluções, legendas) segue por trás e completa o card sozinha (`POST /api/info` com `full: true`). Cada busca registra o tempo no log (`[busca] YouTube em X s`). As buscas usam um yt-dlp sempre aberto (`lib/ytdlp_worker.py`, ~1,4 s a menos por busca): um pedido por vez, cookies lidos e gravados a cada pedido como no normal; ocupado, travado ou sem Python, cai pro yt-dlp normal, e recicla sozinho quando o yt-dlp é atualizado. `YTDLP_WORKER=0` desliga.
 - **Conversor de arquivos:** envio em streaming direto pro disco (até `UPLOAD_MAX_MB`), id `u…` por envio, só o mesmo aparelho usa. O ffmpeg só abre arquivo local e só com os leitores da lista (`AV_FORMATS`: nada de playlist HLS/concat que leria outros arquivos); o ImageMagick recebe o leitor certo na frente (`png:`, `jpeg:`…) e limites de pixels/memória; o Ghostscript roda com `-dSAFER`; SVG vira PNG no navegador (no servidor abriria brecha). Bombas de compressão param no limite (gz 2 GB, cada parte de .docx/.xlsx 64 MB).
 - **Proteção:** CSP com hash de cada script (nada de script de fora nem inline novo), HSTS, `frame-ancestors 'none'`, COOP/CORP, `Permissions-Policy`; limite de pedidos por IP no app (busca 40/min, tarefas 240/min, envios 60/10 min, API 1200/min) e no nginx; no máximo 4 buscas no yt-dlp ao mesmo tempo; arquivos criados com permissão só do dono (`umask 077`). As páginas de admin só abrem pelos caminhos delas.
+- **Playlists e Mix:** playlist, álbum ou lista de faixas (YouTube, YouTube Music, SoundCloud, Spotify, Deezer, Apple Music) vira uma lista pra marcar: baixa só as escolhidas ou todas, em MP4/MP3/WAV. Vídeo aberto dentro de uma Mix (`list=RD…`) continua sendo o vídeo, com a Mix opcional embaixo pra abrir e escolher outros.
 - **Arquivos:** tudo some 1 h depois de pronto (`JOB_TTL_MIN`): o arquivo em `downloads/` e a linha do histórico. "Limpar" no site apaga na hora. O start **não** apaga nada antes do prazo; a limpeza roda a cada 2 min e nunca toca tarefa ativa.
 
 ### Variáveis opcionais
@@ -53,7 +54,7 @@ Em produção, o recomendado são os serviços systemd de `deploy/systemd/` (vej
 | `JOB_TIMEOUT_MIN` / `JOB_IDLE_MIN` | `240` / `10` | tempo máximo de uma tarefa / sem progresso = travada |
 | `INFO_TIMEOUT_SEC` | `120` | tempo máximo de uma busca |
 | `MIN_FREE_GB` | `2` | abaixo disso, recusa tarefas novas |
-| `UPLOAD_MAX_MB` | `500` | tamanho máximo de cada arquivo enviado (o nginx aceita até 520 MB em `/api/upload`) |
+| `UPLOAD_MAX_MB` | `4096` | tamanho máximo de cada arquivo enviado (o nginx aceita até 4200 MB em `/api/upload`; precisa de 3× o tamanho livre em disco) |
 | `MAX_INFO` | `4` | buscas no yt-dlp ao mesmo tempo |
 
 ### Rotas
@@ -63,7 +64,7 @@ Todas são abertas, menos `/renovar` e `/api/cookies` (pedem o código de acesso
 | Rota | O que faz |
 |---|---|
 | `POST /api/login` / `POST /api/logout` | entra (com limite de tentativas) / sai |
-| `POST /api/info` | busca um link (`{url, page}`; playlists vêm em páginas de 200) |
+| `POST /api/info` | busca um link (`{url, page}`; playlists vêm em páginas de 200). Vídeo do YouTube pode voltar com `partial: true` (card rápido); `full: true` espera a busca completa. `mix: true` lista a Mix do vídeo (páginas de 25) |
 | `POST /api/upload` | envia um arquivo pro conversor (corpo cru, nome em `x-file-name`); devolve o tipo e os formatos possíveis |
 | `DELETE /api/upload/:id` | apaga o arquivo enviado |
 | `GET /api/jobs` | histórico deste aparelho, só da última hora |

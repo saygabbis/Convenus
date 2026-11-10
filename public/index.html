@@ -118,7 +118,7 @@
   .loading { display: flex; align-items: center; gap: 10px; padding: 4px 6px 2px; font-size: 14px; width: 100%; }
   .spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--fill); border-top-color: var(--pf); animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .sites { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 4px; font-size: 12px; }
+  .sites { position: relative; width: 100%; display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 4px; font-size: 12px; }
   @media (max-width: 640px) {
     .sites { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 2px 16px; mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent); }
     .sites::-webkit-scrollbar { display: none; }
@@ -168,6 +168,27 @@
   .trk .n { width: 22px; text-align: right; font-size: 12px; color: var(--mut); flex: none; }
   .trk .t { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .trk .d { font-size: 12px; color: var(--mut); flex: none; }
+  /* escolher faixas (playlist, álbum, Mix) */
+  .trk .ck { width: 22px; height: 22px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; color: transparent; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--mut) 45%, transparent); transition: background .2s, box-shadow .2s, color .2s, transform .3s cubic-bezier(.34,1.56,.64,1); }
+  .trk.on { background: var(--ac-soft); }
+  .trk.on .ck { background: var(--ac); color: #fff; box-shadow: none; transform: scale(1.08); }
+  .trk.on .t { color: var(--ink); font-weight: 500; }
+  .trk:focus-visible { outline: 2px solid var(--ac); outline-offset: -2px; }
+  .mixhead { width: 100%; display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 18px; background: var(--fill); border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; transition: background .25s; }
+  .mixhead:hover { background: var(--fill-hover); }
+  .mixhead:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+  .mix-ico { width: 42px; height: 42px; border-radius: 13px; background: var(--ac-soft); color: var(--ac-text); display: flex; align-items: center; justify-content: center; flex: none; }
+  .mix-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13px; line-height: 1.45; }
+  .mix-txt strong { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .mixhead .chev { flex: none; color: var(--mut); display: flex; transition: transform .35s cubic-bezier(.22,1,.36,1); }
+  .mixhead[aria-expanded="true"] .chev { transform: rotate(180deg); }
+  .mixbody { margin-top: 14px; animation: rise .45s cubic-bezier(.22,1,.36,1) both; }
+  .mixload { display: flex; align-items: center; gap: 10px; font-size: 14px; padding: 6px 4px; }
+  .selbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding: 10px 10px 10px 16px; border-radius: 18px; background: var(--fill); }
+  .selbar .cnt { flex: 1 1 140px; font-size: 13px; }
+  .selbar .cnt strong { color: var(--ink); font-weight: 600; }
+  .selbar .k { background: var(--card); padding: 10px 16px; }
+  .selbar .k:disabled { opacity: .45; }
   .subs { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 18px; padding-top: 18px; border-top: 1px solid color-mix(in srgb, var(--mut) 18%, transparent); }
   .subs .lbl { font-size: 13px; color: var(--mut); }
   /* lista de escolha própria (a nativa do navegador não aceita estilo quando abre) */
@@ -290,6 +311,9 @@
 
   /* arquivos */
   .files { padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+  /* vazio: mesma altura do card de links (medida no JS, --search-h) */
+  .files.empty { min-height: var(--search-h, auto); }
+  .files.empty .drop { flex: 1; }
   .drop {
     display: flex; align-items: center; gap: 14px; padding: 18px; border-radius: 18px; background: var(--fill); cursor: pointer;
     outline: 2px dashed color-mix(in srgb, var(--mut) 32%, transparent); outline-offset: -2px; transition: background .25s, outline-color .25s, padding .3s;
@@ -397,7 +421,7 @@
         <div class="sec" id="gallerySec" hidden>
           <div class="sec-head">
             <p class="label mut" id="galleryLabel"></p>
-            <span class="btns"><button class="k" type="button" id="allVideos" hidden></button><button class="k" type="button" id="allPhotos" hidden></button></span>
+            <span class="btns"><button class="k" type="button" id="allPhotos" hidden></button></span>
           </div>
           <div class="gallery" id="gallery"></div>
           <button class="k more" type="button" id="more" hidden></button>
@@ -415,6 +439,15 @@
         <div class="sec" id="thumbsSec" hidden>
           <p class="label mut">Baixar capa</p>
           <div class="thumbs" id="thumbs"></div>
+        </div>
+
+        <div class="sec" id="mixSec" hidden>
+          <button class="mixhead" type="button" id="mixToggle" aria-expanded="false" aria-controls="mixBody">
+            <span class="mix-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h12M3 12h12M3 18h7"/><path d="M17 15.5V8l4-1"/><circle cx="15" cy="18" r="2.5"/></svg></span>
+            <span class="mix-txt"><strong>Esse vídeo tá numa Mix</strong><span class="mut" id="mixSub">Mostrar os outros vídeos pra baixar junto</span></span>
+            <span class="chev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
+          </button>
+          <div class="mixbody" id="mixBody" hidden></div>
         </div>
       </section>
 
@@ -435,10 +468,10 @@
       </div>
 
       <div class="pane" id="filesPane" hidden>
-      <section class="card files" id="files">
+      <section class="card files empty" id="files">
         <label class="drop" id="drop" for="fileIn" tabindex="0">
           <span class="drop-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V5"/><path d="M7 10l5-5 5 5"/><path d="M5 20h14"/></svg></span>
-          <span class="drop-txt"><strong id="dropTitle">Solta os arquivos aqui</strong><span class="mut" id="dropSub">ou clica pra escolher · até 500 MB cada</span></span>
+          <span class="drop-txt"><strong id="dropTitle">Solta os arquivos aqui</strong><span class="mut" id="dropSub">ou clica pra escolher · até 4 GB cada</span></span>
           <span class="k" aria-hidden="true">Escolher</span>
         </label>
         <input type="file" id="fileIn" multiple class="sr" tabindex="-1" aria-hidden="true">
@@ -475,7 +508,7 @@
   <div>
     <span class="drop-ico"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V5"/><path d="M7 10l5-5 5 5"/><path d="M5 20h14"/></svg></span>
     <strong>Solta pra converter</strong>
-    <span class="mut">Qualquer arquivo, até 500 MB</span>
+    <span class="mut">Qualquer arquivo, até 4 GB</span>
   </div>
 </div>
 
@@ -511,8 +544,14 @@ function platformOfUrl(u) {
 }
 function setPlatform(p) {
   document.documentElement.style.setProperty('--pf', p?.color || 'var(--ac)');
-  document.querySelectorAll('.pill').forEach((el) => el.classList.toggle('on', el.dataset.name === p?.name));
-  document.querySelector('.pill.on')?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  // Sem link, nenhuma acende (a "e mais" não tem nome e acendia, levando a faixa pro fim).
+  document.querySelectorAll('.pill').forEach((el) => el.classList.toggle('on', Boolean(p) && el.dataset.name === p.name));
+  // No celular a faixa rola de lado: centraliza a plataforma do link, ou volta pro começo.
+  // (scrollIntoView rolava a página inteira e podia parar no fim da faixa.)
+  const sites = $('#sites'), on = sites.querySelector('.pill.on');
+  if (sites.scrollWidth <= sites.clientWidth) return;
+  const left = on ? on.offsetLeft - (sites.clientWidth - on.offsetWidth) / 2 : 0;
+  sites.scrollTo({ left: Math.max(0, left), behavior: on ? 'smooth' : 'auto' });
 }
 
 const ICONS = {
@@ -565,7 +604,8 @@ async function api(path, opts = {}) {
 }
 
 // Item de playlist paginada: o servidor precisa da página e da posição dentro dela.
-const jobRef = (it, n) => (it.page != null ? { page: it.page, item: it.pidx } : { item: n });
+// Item da Mix: o servidor procura na lista da Mix (mix: true), não no vídeo.
+const jobRef = (it, n) => ({ ...(it.page != null ? { page: it.page, item: it.pidx } : { item: n }), ...(it.mix ? { mix: true } : {}) });
 
 $('#sites').innerHTML = PLATFORMS.map((p) => `<span class="pill" data-name="${p.name}" style="--c:${p.color}"><i></i>${p.label || p.name}</span>`).join('')
   + '<span class="pill">e mais</span>';
@@ -626,12 +666,15 @@ async function lookup(url) {
     const info = await api('/api/info', { method: 'POST', body: JSON.stringify({ url }) });
     if (my !== seq) return;
     state.info = info;
+    state.picked = new Set();
+    state.mix = info.mix ? { open: false, items: null, page: -1, hasMore: true, picked: new Set(), loading: false, err: '' } : null;
     setPlatform(platformByName(info.platform) || p);
     if (info.type === 'profile') renderProfile();
     else {
       const first = info.items.findIndex((it) => it.kind !== 'image');
       selectItem(first >= 0 ? first : 0);
     }
+    if (info.partial) completeInfo(my, url, info);
   } catch (e) {
     if (my !== seq) return;
     state.url = '';
@@ -640,6 +683,28 @@ async function lookup(url) {
     $('#formErr').hidden = false;
   } finally {
     if (my === seq) $('#loading').hidden = true;
+  }
+}
+
+// Card rápido do YouTube (título e capa em ~0,4 s): a busca completa segue no servidor e,
+// quando chega, completa as resoluções, a duração e as legendas sem mexer no que já foi escolhido.
+async function completeInfo(my, url, quick) {
+  try {
+    const full = await api('/api/info', { method: 'POST', body: JSON.stringify({ url, full: true }) });
+    if (my !== seq || state.info !== quick) return;
+    full.mix = full.mix || quick.mix;
+    state.info = full;
+    const it = full.items[0];
+    if (it?.heights?.length && !it.heights.includes(state.quality.mp4)) state.quality.mp4 = it.heights.includes(1080) ? 1080 : it.heights[0];
+    renderPost();
+  } catch (e) {
+    if (my !== seq || state.info !== quick) return;
+    state.url = '';
+    state.info = null;
+    $('#post').hidden = true;
+    $('#formErr').textContent = e.message;
+    $('#formErr').hidden = false;
+    checkYt();
   }
 }
 
@@ -684,9 +749,10 @@ function renderPost() {
   const i = state.info;
   const it = cur();
   const multi = i.items.length > 1;
+  const list = isList(i);
 
   // Cabeçalho
-  const cover = it.thumb || i.thumbnail || '';
+  const cover = (list ? i.thumbnail || it.thumb : it.thumb || i.thumbnail) || '';
   $('#pCover').src = cover;
   $('#pCover').hidden = !cover;
   $('#pDur').textContent = fmtDur(it.duration || i.duration);
@@ -709,18 +775,15 @@ function renderPost() {
         const count = (k, one, many) => { const c = i.items.filter((x) => x.kind === k).length; return c ? `${c} ${c > 1 ? many : one}` : ''; };
     const parts = [count('image', 'foto', 'fotos'), count('video', 'vídeo', 'vídeos'), count('audio', 'áudio', 'áudios')].filter(Boolean);
     $('#galleryLabel').textContent = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} e ${parts.at(-1)}` : parts[0];
-    const tracks = i.playlist || i.items.every((x) => x.kind === 'audio');
+    const tracks = list;
     const vidList = tracks && i.items.some((x) => x.kind === 'video');
-    $('#allPhotos').hidden = !(photos > 1 || (tracks && i.items.length > 1));
-    $('#allPhotos').innerHTML = tracks ? `${svg('dl', 14)}Baixar todas em MP3` : `${svg('dl', 14)}Baixar ${photos} fotos`;
-    $('#allVideos').hidden = !(vidList && i.items.length > 1);
-    $('#allVideos').innerHTML = `${svg('dl', 14)}Baixar todas em MP4`;
+    // Lista: toca nas faixas pra escolher; o conversor embaixo baixa as escolhidas (ou todas).
+    $('#allPhotos').hidden = !(photos > 1 || tracks);
+    $('#allPhotos').innerHTML = tracks ? (state.picked.size === i.items.length ? 'Desmarcar todas' : `${svg('ok', 14, 2.6)}Selecionar todas`) : `${svg('dl', 14)}Baixar ${photos} fotos`;
     $('#gallery').className = tracks ? `tracks${vidList ? ' wide' : ''}` : 'gallery';
     if (tracks) {
-      $('#galleryLabel').textContent = vidList ? `${i.items.length} ${i.items.length > 1 ? 'vídeos' : 'vídeo'}` : `${i.items.length} ${i.items.length > 1 ? 'faixas' : 'faixa'}`;
-      $('#gallery').innerHTML = i.items.map((x, n) => `<div class="trk${n === state.sel ? ' sel' : ''}" data-n="${n}" role="button" tabindex="0" style="animation-delay:${Math.min(n, 20) * 25}ms">
-        <span class="n">${n + 1}</span>${x.thumb ? `<img src="${esc(x.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="ph"></span>'}
-        <span class="t">${esc(x.label || `Faixa ${n + 1}`)}</span><span class="d">${x.duration ? fmtDur(x.duration) : ''}</span></div>`).join('');
+      $('#galleryLabel').textContent = vidList ? `${i.items.length} vídeos` : `${i.items.length} faixas`;
+      $('#gallery').innerHTML = trackRows(i.items, state.picked);
     } else $('#gallery').innerHTML = i.items.map((x, n) => {
       const pic = x.thumb ? `<img src="${esc(x.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : svg(x.kind === 'audio' ? 'music' : 'image', 30, 1.6);
       const action = x.kind === 'image'
@@ -732,24 +795,185 @@ function renderPost() {
       </div>`;
     }).join('');
   }
-  if (!i.playlist && i.items.every((x) => x.kind === 'audio') && it.label) $('#pTitle').textContent = it.label;
+  if (!list && i.items.every((x) => x.kind === 'audio') && it.label) $('#pTitle').textContent = it.label;
   $('#more').hidden = !(i.playlist && i.hasMore);
   $('#more').textContent = `Carregar mais (${i.items.length}${i.total > i.items.length ? ` de ${i.total}` : ''})`;
 
-  // Conversor do item selecionado
-  const canConvert = it.kind !== 'image';
+  // Conversor do item selecionado (ou das faixas escolhidas, numa lista)
+  const canConvert = list || it.kind !== 'image';
   $('#convert').hidden = !canConvert;
-  if (canConvert) renderConvert(it, base, multi);
+  if (list) renderListConvert(i);
+  else if (canConvert) renderConvert(it, base, multi);
 
   // Capa: tamanhos do YouTube, ou a capa do vídeo selecionado nas outras plataformas.
-  const thumbs = !multi && it.native && i.thumbs?.length ? i.thumbs
+  const thumbs = list ? []
+    : !multi && it.native && i.thumbs?.length ? i.thumbs
     : it.kind === 'video' && it.thumb ? [{ label: 'Capa do vídeo', size: it.width && it.height ? `${it.width}×${it.height}` : '', url: it.thumb }] : [];
   $('#thumbsSec').hidden = thumbs.length === 0;
   $('#thumbs').innerHTML = thumbs.map((t) =>
     `<a class="k" href="${esc(mediaLink(t.url, `${multi ? base : fileBase(i.title)} - capa${t.label.startsWith('Capa') ? '' : ` ${t.label}`}`))}" download>${esc(t.label)} <small>${esc(t.size)}</small></a>`).join('');
 
+  syncMix();
   $('#post').hidden = false;
 }
+
+// Playlist, álbum ou lista de faixas: escolhe quais baixar.
+const isList = (i) => i.items.length > 1 && Boolean(i.playlist || i.items.every((x) => x.kind === 'audio'));
+const noun = (items, n) => (items.some((x) => x.kind === 'video') ? (n === 1 ? 'vídeo' : 'vídeos') : (n === 1 ? 'faixa' : 'faixas'));
+
+function trackRows(items, picked) {
+  return items.map((x, n) => {
+    const on = picked.has(n);
+    return `<div class="trk${on ? ' on' : ''}" data-n="${n}" role="checkbox" aria-checked="${on}" tabindex="0" style="animation-delay:${Math.min(n, 20) * 25}ms">
+      <span class="ck">${svg('ok', 14, 3)}</span><span class="n">${n + 1}</span>${x.thumb ? `<img src="${esc(x.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="ph"></span>'}
+      <span class="t">${esc(x.label || `Faixa ${n + 1}`)}</span><span class="d">${x.duration ? fmtDur(x.duration) : ''}</span></div>`;
+  }).join('');
+}
+
+// Liga/desliga uma linha sem redesenhar a lista (não perde a rolagem nem refaz a animação).
+function flipRow(row, picked) {
+  const n = Number(row.dataset.n);
+  if (picked.has(n)) picked.delete(n); else picked.add(n);
+  row.classList.toggle('on', picked.has(n));
+  row.setAttribute('aria-checked', picked.has(n));
+}
+
+function renderListConvert(i) {
+  const items = i.items;
+  const video = items.some((x) => x.kind === 'video');
+  const avail = { mp4: video, mp3: true, wav: true };
+  if (!avail[state.kind]) state.kind = 'mp3';
+  const n = state.picked.size;
+  $('#convertLabel').hidden = false;
+  const word = video ? (n === 1 ? 'vídeo escolhido' : 'vídeos escolhidos') : (n === 1 ? 'faixa escolhida' : 'faixas escolhidas');
+  $('#convertLabel').innerHTML = n
+    ? `<strong style="color:var(--ink)">${n} de ${items.length}</strong> ${word}`
+    : video ? 'Toca nos vídeos pra escolher, ou baixa todos.' : 'Toca nas faixas pra escolher, ou baixa todas.';
+  const tabs = [['mp4', 'MP4', 'video'], ['mp3', 'MP3', 'music'], ['wav', 'WAV', 'wave']].filter(([k]) => avail[k]);
+  const tabEl = document.querySelector('.tabs');
+  tabEl.style.gridTemplateColumns = `repeat(${tabs.length}, minmax(0, 1fr))`;
+  tabEl.innerHTML = tabs.map(([k, label, ico]) =>
+    `<button class="k" type="button" role="tab" data-kind="${k}" aria-selected="${k === state.kind}">${svg(ico, 22, 2)}${label}</button>`).join('');
+  const note = $('#note');
+  note.hidden = true;
+  const chips = $('#chips');
+  if (state.kind === 'mp4') {
+    const hs = items.find((x) => x.heights?.length)?.heights || [0, 1080, 720, 480, 360];
+    if (!hs.includes(state.quality.mp4)) state.quality.mp4 = hs.includes(1080) ? 1080 : hs[0];
+    $('#qLabel').textContent = 'Resolução';
+    chips.innerHTML = hs.map((h) =>
+      `<button class="k" type="button" data-q="${h}" aria-pressed="${h === state.quality.mp4}">${h ? `${h}p` : 'Melhor qualidade'}${RES_NAMES[h] ? ` <small>${RES_NAMES[h]}</small>` : ''}</button>`).join('');
+    note.textContent = 'Se algum vídeo não tiver essa resolução, vem na maior abaixo dela.';
+    note.hidden = false;
+  } else if (state.kind === 'mp3') {
+    $('#qLabel').textContent = 'Qualidade';
+    chips.innerHTML = ['320', '256', '192', '128'].map((q) =>
+      `<button class="k" type="button" data-q="${q}" aria-pressed="${q === state.quality.mp3}">${q} kbps</button>`).join('');
+  } else {
+    $('#qLabel').textContent = 'Qualidade';
+    chips.innerHTML = '<button class="k" type="button" aria-pressed="true">Sem perda <small>PCM 16-bit</small></button>';
+    note.textContent = 'WAV é pesado: uns 10 MB por minuto.';
+    note.hidden = false;
+  }
+  const what = n ? `${n} ${noun(items, n)}` : `${video ? 'todos' : 'todas'} (${items.length})`;
+  $('#goWrap').innerHTML = `<button class="cta" type="button" id="goList">${svg('dl', 20, 2.4)}Baixar ${what} em ${state.kind.toUpperCase()}</button>`;
+}
+
+// ---------- Mix do YouTube ----------
+// Redesenhar a página (trocar formato etc.) não refaz a lista da Mix: só atualiza o botão de MP4.
+let shownMix = null;
+function syncMix() {
+  if (state.mix !== shownMix) { shownMix = state.mix; return renderMix(); }
+  if (state.mix?.items && state.mix.open) mixCount();
+}
+function renderMix() {
+  const m = state.mix;
+  $('#mixSec').hidden = !m;
+  if (!m) return;
+  $('#mixToggle').setAttribute('aria-expanded', m.open);
+  $('#mixSub').textContent = m.open ? 'Escolhe os que quiser baixar junto' : 'Mostrar os outros vídeos pra baixar junto';
+  const body = $('#mixBody');
+  body.hidden = !m.open;
+  if (!m.open) return;
+  if (!m.items) {
+    body.innerHTML = m.err
+      ? `<div class="msg-err">${esc(m.err)}</div><button class="k more" type="button" id="mixMore">Tentar de novo</button>`
+      : '<div class="mixload mut"><span class="spin"></span>Abrindo a Mix…</div>';
+    return;
+  }
+  const n = m.picked.size;
+  const q = state.quality.mp4;
+  body.innerHTML = `<div class="sec-head"><p class="label mut">${m.items.length} vídeos na Mix</p><span class="btns"><button class="k" type="button" id="mixAll">${n === m.items.length ? 'Desmarcar todos' : `${svg('ok', 14, 2.6)}Selecionar todos`}</button></span></div>
+    <div class="tracks wide" id="mixList">${trackRows(m.items, m.picked)}</div>
+    ${m.hasMore ? `<button class="k more" type="button" id="mixMore"${m.loading ? ' disabled' : ''}>${m.loading ? 'Carregando…' : m.err ? 'Tentar de novo' : 'Carregar mais da Mix'}</button>` : ''}
+    <div class="selbar"><span class="cnt mut" id="mixCnt"></span>
+      <button class="k" type="button" data-mk="mp3">${svg('music', 16, 2)}MP3</button>
+      <button class="k" type="button" data-mk="mp4">${svg('video', 16, 2)}MP4${q ? ` ${q}p` : ''}</button></div>`;
+  mixCount();
+}
+
+function mixCount() {
+  const n = state.mix.picked.size;
+  $('#mixCnt').innerHTML = n ? `<strong>${n}</strong> ${n === 1 ? 'vídeo escolhido' : 'vídeos escolhidos'}` : 'Toca nos vídeos pra escolher';
+  document.querySelectorAll('#mixBody [data-mk]').forEach((b) => { b.disabled = !n; });
+  const q = state.quality.mp4, mp4 = $('#mixBody [data-mk=mp4]');
+  if (mp4) mp4.innerHTML = `${svg('video', 16, 2)}MP4${q ? ` ${q}p` : ''}`;
+  const all = $('#mixAll');
+  if (all) all.innerHTML = n === state.mix.items.length ? 'Desmarcar todos' : `${svg('ok', 14, 2.6)}Selecionar todos`;
+}
+
+async function loadMix() {
+  const m = state.mix, info = state.info, url = state.url;
+  if (m.loading) return;
+  m.loading = true;
+  m.err = '';
+  renderMix();
+  try {
+    const next = await api('/api/info', { method: 'POST', body: JSON.stringify({ url, mix: true, page: m.page + 1 }) });
+    if (state.mix !== m) return;
+    // O primeiro da Mix é o próprio vídeo: já tá ali em cima.
+    const fresh = next.items.filter((x) => !(x.entryUrl || '').endsWith(`v=${info.id}`) && !(m.items || []).some((y) => y.entryUrl === x.entryUrl));
+    m.items = [...(m.items || []), ...fresh.map((x) => ({ ...x, mix: true }))];
+    m.page = next.page;
+    m.hasMore = next.hasMore && m.page < 7;
+  } catch (e) {
+    if (state.mix === m) m.err = e.message;
+  } finally {
+    m.loading = false;
+    if (state.mix === m) renderMix();
+  }
+}
+
+$('#mixSec').addEventListener('click', async (e) => {
+  const m = state.mix;
+  if (!m) return;
+  if (e.target.closest('#mixToggle')) {
+    m.open = !m.open;
+    renderMix();
+    if (m.open && !m.items && !m.loading) loadMix();
+    return;
+  }
+  if (e.target.closest('#mixMore')) return loadMix();
+  if (e.target.closest('#mixAll')) {
+    if (m.picked.size === m.items.length) m.picked.clear(); else m.items.forEach((_, n) => m.picked.add(n));
+    document.querySelectorAll('#mixList .trk').forEach((r) => { const on = m.picked.has(Number(r.dataset.n)); r.classList.toggle('on', on); r.setAttribute('aria-checked', on); });
+    return mixCount();
+  }
+  const row = e.target.closest('#mixList .trk');
+  if (row) { flipRow(row, m.picked); return mixCount(); }
+  const b = e.target.closest('[data-mk]');
+  if (b) {
+    const kind = b.dataset.mk;
+    const picked = [...m.picked].sort((x, y) => x - y).map((n) => m.items[n]);
+    await sendMany(picked, kind, kind === 'mp4' ? (state.quality.mp4 ?? 720) : state.quality.mp3, b);
+    m.picked.clear();
+    renderMix();
+  }
+});
+$('#mixSec').addEventListener('keydown', (e) => {
+  const row = e.target.closest('#mixList .trk');
+  if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); flipRow(row, state.mix.picked); mixCount(); }
+});
 
 function renderConvert(it, base, multi) {
   const avail = { mp4: it.kind === 'video', mp3: it.hasAudio, wav: it.hasAudio };
@@ -811,6 +1035,7 @@ function renderConvert(it, base, multi) {
 function subsBlock(it) {
   if (!it.native || it.search || it.kind !== 'video') return '';
   if (it.page != null) return '<p class="note mut" style="margin:14px 0 0">Legendas: abre o vídeo sozinho (fora da playlist) pra ver os idiomas.</p>';
+  if (state.info.partial) return '<div class="mixload mut" style="margin-top:14px;font-size:13px"><span class="spin"></span>Procurando legendas e resoluções…</div>';
   const subs = it.subs || [];
   if (!subs.length) return '<p class="note mut" style="margin:14px 0 0">Esse vídeo não tem legendas.</p>';
   const all = [{ lang: '', name: 'Sem legenda' }, ...subs];
@@ -832,15 +1057,31 @@ $('#gallery').addEventListener('click', (e) => {
   if (c) return copyImage(c.dataset.copy, c);
   if (e.target.closest('a')) return;
   const t = e.target.closest('.tile[role=button], .trk');
-  if (t) selectItem(Number(t.dataset.n));
+  if (t) pickOrSelect(t);
 });
 $('#gallery').addEventListener('keydown', (e) => {
   const t = e.target.closest('.tile[role=button], .trk');
-  if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectItem(Number(t.dataset.n)); }
+  if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickOrSelect(t); }
 });
+function pickOrSelect(t) {
+  if (!isList(state.info)) return selectItem(Number(t.dataset.n));
+  flipRow(t, state.picked);
+  listChanged();
+}
+function listChanged() {
+  const i = state.info;
+  $('#allPhotos').innerHTML = state.picked.size === i.items.length ? 'Desmarcar todas' : `${svg('ok', 14, 2.6)}Selecionar todas`;
+  renderListConvert(i);
+}
+// Trocar formato/qualidade numa lista não redesenha a lista (perderia a rolagem).
+const refreshConvert = () => (isList(state.info) ? renderListConvert(state.info) : renderPost());
 $('#allPhotos').addEventListener('click', async () => {
   const i = state.info;
-  if (i.playlist || i.items.every((x) => x.kind === 'audio')) return convertAll('mp3', $('#allPhotos'));
+  if (isList(i)) {
+    if (state.picked.size === i.items.length) state.picked.clear(); else i.items.forEach((_, n) => state.picked.add(n));
+    document.querySelectorAll('#gallery .trk').forEach((r) => { const on = state.picked.has(Number(r.dataset.n)); r.classList.toggle('on', on); r.setAttribute('aria-checked', on); });
+    return listChanged();
+  }
   for (const [n, x] of i.items.entries()) {
     if (x.kind !== 'image') continue;
     triggerDownload(mediaLink(x.url, nameFor(i, n)));
@@ -851,7 +1092,7 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-kind]');
   if (!b) return;
   state.kind = b.dataset.kind;
-  renderPost();
+  refreshConvert();
 });
 $('#chips').addEventListener('click', (e) => {
   const v = e.target.closest('[data-v]');
@@ -859,7 +1100,7 @@ $('#chips').addEventListener('click', (e) => {
   const b = e.target.closest('[data-q]');
   if (!b) return;
   state.quality[state.kind] = state.kind === 'mp4' ? Number(b.dataset.q) : b.dataset.q;
-  renderPost();
+  refreshConvert();
 });
 
 $('#goWrap').addEventListener('change', (e) => {
@@ -946,9 +1187,8 @@ $('#goWrap').addEventListener('click', async (e) => {
   }
 });
 
-async function startJob(n, kind, quality) {
+async function startJob(it, n, kind, quality) {
   const i = state.info;
-  const it = i.items[n];
   const title = fileBase(it.label || (i.items.length > 1 ? `${i.title} (${n + 1})` : i.title));
   const job = await api('/api/jobs', { method: 'POST', body: JSON.stringify({ url: state.url, ...jobRef(it, n), kind, quality, title }) });
   job.platform = i.platform;
@@ -958,7 +1198,37 @@ async function startJob(n, kind, quality) {
   poll();
 }
 
-$('#allVideos').addEventListener('click', () => convertAll('mp4', $('#allVideos')));
+// Várias de uma vez (faixas escolhidas, a lista toda ou vídeos da Mix): uma tarefa por item.
+async function sendMany(items, kind, quality, btn) {
+  if (!items.length) return;
+  const label = btn.innerHTML;
+  btn.disabled = true;
+  let done = 0;
+  try {
+    for (const it of items) {
+      btn.textContent = items.length > 1 ? `Mandando ${done + 1} de ${items.length}…` : 'Mandando…';
+      await startJob(it, state.info.items.indexOf(it), kind, quality);
+      done++;
+    }
+  } catch (e) {
+    alert(done ? `${done} de ${items.length} foram pra fila. ${e.message}` : e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = label;
+  }
+}
+
+$('#goWrap').addEventListener('click', async (e) => {
+  const btn = e.target.closest('#goList');
+  if (!btn) return;
+  const i = state.info;
+  const picked = state.picked.size ? [...state.picked].sort((a, b) => a - b).map((n) => i.items[n]) : [...i.items];
+  await sendMany(picked, state.kind, state.quality[state.kind] ?? (state.kind === 'mp4' ? 720 : null), btn);
+  if (state.info !== i) return;
+  state.picked.clear();
+  document.querySelectorAll('#gallery .trk.on').forEach((r) => { r.classList.remove('on'); r.setAttribute('aria-checked', 'false'); });
+  listChanged();
+});
 
 // Playlist grande: carrega a próxima página de 200 e junta na lista.
 $('#more').addEventListener('click', async () => {
@@ -985,19 +1255,6 @@ $('#pWho').addEventListener('click', (e) => {
   $('#url').value = state.info.playlistUrl;
   lookup(state.info.playlistUrl);
 });
-
-async function convertAll(kind, btn) {
-  btn.disabled = true;
-  const n = state.info.items.length;
-  const quality = kind === 'mp4' ? (state.quality.mp4 ?? 720) : state.quality.mp3;
-  try {
-    for (let k = 0; k < n; k++) await startJob(k, kind, quality);
-  } catch (e) {
-    alert(e.message);
-  } finally {
-    btn.disabled = false;
-  }
-}
 
 const FMT = { jpg: 'JPG', b64: 'Base64', unpack: 'descompactado', md: 'Markdown', docx: 'Word', pptx: 'PowerPoint', xlsx: 'Excel', odt: 'ODT', bin: 'arquivo', audio: 'áudio' };
 const fmtName = (x) => FMT[x] || String(x || '').toUpperCase();
@@ -1172,8 +1429,23 @@ function setMode(m, { save = true } = {}) {
   if (m === 'links') setPlatform(platformOfUrl($('#url').value));
   else document.documentElement.style.setProperty('--pf', 'var(--ac)');
   moveKnob();
+  syncFilesHeight();
   if (save) store('gc-mode', m);
 }
+
+// O card de arquivos vazio fica da altura do card de links (medido mostrando ele um instante,
+// sem a busca/erro; nada é pintado no meio).
+function syncFilesHeight() {
+  const els = [$('#linksPane'), $('#loading'), $('#formErr')];
+  const was = els.map((el) => el.hidden);
+  els.forEach((el, k) => { el.hidden = k > 0; });
+  const h = $('#form').offsetHeight;
+  els.forEach((el, k) => { el.hidden = was[k]; });
+  if (h) document.documentElement.style.setProperty('--search-h', `${h}px`);
+}
+let fhRaf = 0;
+addEventListener('resize', () => { cancelAnimationFrame(fhRaf); fhRaf = requestAnimationFrame(syncFilesHeight); });
+document.fonts?.ready.then(syncFilesHeight);
 document.querySelector('.seg').addEventListener('click', (e) => {
   const b = e.target.closest('[data-mode]');
   if (b) setMode(b.dataset.mode);
@@ -1188,7 +1460,7 @@ addEventListener('resize', moveKnob);
 document.fonts?.ready.then(moveKnob);
 
 // ---------- conversor de arquivos ----------
-const MAX_UP = 500 * 1024 * 1024;
+const MAX_UP = 4 * 1024 ** 3;
 const MAX_FILES = 10;
 const FILE_ICON = { video: 'video', audio: 'music', image: 'image', pdf: 'doc', doc: 'doc', data: 'table', sub: 'doc', text: 'doc', archive: 'box', other: 'file' };
 // Sugestão de formato quando o arquivo chega (o primeiro desta lista que existir pra ele).
@@ -1197,7 +1469,7 @@ state.files = [];
 state.fileTo = '';
 
 const touch = matchMedia('(pointer: coarse)').matches;
-$('#dropSub').textContent = `ou ${touch ? 'toca' : 'clica'} pra escolher · até 500 MB cada`;
+$('#dropSub').textContent = `ou ${touch ? 'toca' : 'clica'} pra escolher · até 4 GB cada`;
 
 // SVG vira PNG aqui no navegador (desenhar SVG no servidor abriria brecha pra ler arquivos de lá).
 async function rasterSvg(file) {
@@ -1270,7 +1542,7 @@ function addFiles(list) {
           send = await rasterSvg(f);
           hint = 'svg';
         }
-        if (send.size > MAX_UP) throw new Error('Grande demais: o máximo é 500 MB.');
+        if (send.size > MAX_UP) throw new Error('Grande demais: o máximo é 4 GB.');
         if (!send.size) throw new Error('Esse arquivo está vazio.');
         e.info = await sendFile(e, send, hint);
         e.status = 'ok';
@@ -1295,9 +1567,10 @@ function commonTargets(ready) {
 
 function renderFiles() {
   const list = state.files;
+  $('#files').classList.toggle('empty', list.length === 0);
   $('#drop').classList.toggle('mini', list.length > 0);
   $('#dropTitle').textContent = list.length ? 'Adicionar mais' : 'Solta os arquivos aqui';
-  $('#dropSub').textContent = list.length ? `ou ${touch ? 'toca' : 'clica'} pra escolher` : `ou ${touch ? 'toca' : 'clica'} pra escolher · até 500 MB cada`;
+  $('#dropSub').textContent = list.length ? `ou ${touch ? 'toca' : 'clica'} pra escolher` : `ou ${touch ? 'toca' : 'clica'} pra escolher · até 4 GB cada`;
   $('#fileHint').hidden = list.length > 0;
   $('#fileList').innerHTML = list.map((e) => {
     const cls = e.status === 'err' ? 'err' : e.status === 'up' ? 'run' : '';

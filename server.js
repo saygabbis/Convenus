@@ -51,7 +51,7 @@ const MIN_FREE_BYTES = Number(process.env.MIN_FREE_GB || 2) * 1024 ** 3;
 const MAX_ATTEMPTS = 3; // reinícios no meio de uma tarefa antes de desistir dela
 const PLAYLIST_PAGE = 200;
 // Conversor de arquivos: tamanho máximo de cada envio.
-const UPLOAD_MAX = Number(process.env.UPLOAD_MAX_MB || 500) * 1024 ** 2;
+const UPLOAD_MAX = Number(process.env.UPLOAD_MAX_MB || 4096) * 1024 ** 2;
 const UPLOAD_ID_RE = /^u[0-9a-f]{16}$/;
 // Buscas no yt-dlp ao mesmo tempo (o resto espera a vez): segura abuso sem travar o uso normal.
 const MAX_INFO = Number(process.env.MAX_INFO || 4);
@@ -307,13 +307,19 @@ async function getChannel(url) {
   };
 }
 
-async function getInfo(url, page = 0) {
-  const key = `${url}#${page}`;
-  const hit = infoCache.get(key);
-  if (hit && Date.now() - hit.at < INFO_TTL_MS) return hit.info;
+function cachedInfo(url, page = 0, mix = false) {
+  const hit = infoCache.get(`${url}#${mix ? 'mix' : ''}${page}`);
+  return hit && Date.now() - hit.at < INFO_TTL_MS ? hit.info : null;
+}
+
+// mix = a lista "Mix" do YouTube que acompanha um vídeo (watch?v=…&list=RD…).
+async function getInfo(url, page = 0, mix = false) {
+  const key = `${url}#${mix ? 'mix' : ''}${page}`;
+  const hit = cachedInfo(url, page, mix);
+  if (hit) return hit;
   if (infoPending.has(key)) return infoPending.get(key);
 
-  const p = withInfoSlot(() => resolveInfo(url, page))
+  const p = withInfoSlot(() => (mix ? mixList(url, page) : resolveInfo(url, page)))
     .then((info) => {
       infoCache.set(key, { at: Date.now(), info });
       while (infoCache.size > INFO_CACHE_MAX) infoCache.delete(infoCache.keys().next().value);
@@ -427,10 +433,12 @@ function isPlaylistUrl(url) {
 }
 
 // Playlists grandes vêm em páginas de 200: nunca carrega milhares de itens de uma vez na memória.
-async function flatPlaylist(url, page = 0) {
-  const start = page * PLAYLIST_PAGE + 1;
-  const end = start + PLAYLIST_PAGE - 1;
-  const raw = await withYt(url, () => runCapture([...baseArgs(url), '-J', '--flat-playlist', '--playlist-start', String(start), '--playlist-end', String(end), '--', url]));
+async function flatPlaylist(url, page = 0, { size = PLAYLIST_PAGE, mix = false } = {}) {
+  const start = page * size + 1;
+  const end = start + size - 1;
+  // Mix: o link é de um vídeo (watch?v=…&list=RD…), então pede a lista em vez do vídeo sozinho.
+  const args = mix ? [...baseArgs(url).filter((a) => a !== '--no-playlist'), '--yes-playlist'] : baseArgs(url);
+  const raw = await withYt(url, () => runCapture([...args, '-J', '--flat-playlist', '--playlist-start', String(start), '--playlist-end', String(end), '--', url]));
   const j = JSON.parse(raw);
   const audio = /soundcloud\.com/i.test(url);
   const items = (j.entries || []).filter((e) => e && (e.url || e.id)).map((e, pidx) => {
@@ -461,11 +469,55 @@ async function flatPlaylist(url, page = 0) {
     thumbnail: items[0].thumb,
     playlist: true,
     page,
-    total: total || items.length,
-    hasMore: total ? end < total : items.length === PLAYLIST_PAGE,
+    total: mix ? 0 : total || items.length,
+    hasMore: !mix && total ? end < total : items.length === size,
     items,
     thumbs: [],
   };
+}
+
+// O resto da Mix de um vídeo, em páginas de 25 (cada página leva ~2 s; a Mix chega a centenas).
+const MIX_PAGE = 25;
+function mixId(url) {
+  const u = new URL(url);
+  const list = YT_HOSTS.test(u.hostname) && u.searchParams.get('v') ? u.searchParams.get('list') || '' : '';
+  return /^RD[\w-]+$/.test(list) ? list : null;
+}
+async function mixList(url, page = 0) {
+  if (!mixId(url)) throw new Error('Esse link não tem Mix.');
+  if (page > 7) throw new Error('Não tem mais itens nessa Mix.');
+  const u = new URL(url);
+  // Só o vídeo e a lista: index/start_radio mudariam onde a Mix começa.
+  const link = `https://${u.hostname}/watch?v=${encodeURIComponent(u.searchParams.get('v'))}&list=${encodeURIComponent(mixId(url))}`;
+  const info = await flatPlaylist(link, page, { size: MIX_PAGE, mix: true });
+  return { type: 'post', platform: platformOf(url), avatar: null, duration: 0, ...info, mix: true };
+}
+
+// Vídeo aberto dentro de uma playlist: oferece abrir a playlist inteira; dentro de uma Mix, mostrar o resto dela.
+function listOffers(url, info) {
+  const list = isYouTube(url) && new URL(url).searchParams.get('list');
+  if (!list) return info;
+  if (mixId(url)) info.mix = true;
+  else if (!/^(RD|UL)/.test(list)) info.playlistUrl = `https://www.youtube.com/playlist?list=${encodeURIComponent(list)}`;
+  return info;
+}
+
+// Card rápido de um vídeo do YouTube (~0,4 s): título e canal pelo oEmbed, capas pelo i.ytimg.
+// A busca completa (resoluções, legendas) continua por trás e o download parte dela.
+async function quickYt(url, id) {
+  const watch = `https://www.youtube.com/watch?v=${id}`;
+  const [o, thumbs] = await Promise.all([
+    fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(watch)}`, { signal: AbortSignal.timeout(4000) })
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    thumbOptions(id),
+  ]);
+  if (!o?.title) return null;
+  const thumb = thumbs[0]?.url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+  return listOffers(url, {
+    type: 'post', platform: platformOf(url), avatar: null, partial: true,
+    id, title: clean(o.title, 300), uploader: clean(o.author_name, 120), thumbnail: thumb, duration: 0, thumbs,
+    items: [{ kind: 'video', native: true, index: null, heights: [0, 1080, 720, 480, 360], hasAudio: true, thumb, duration: 0, width: 0, height: 0, isLive: false, subs: [] }],
+  });
 }
 
 // "https://soundcloud.com/forss/city-ports" -> "City ports"
@@ -515,11 +567,7 @@ async function resolveInfo(url, page = 0) {
 
   if (isPlaylistUrl(url)) return { ...base, ...(await flatPlaylist(url, page)) };
 
-  const info = { ...base, ...(await ytdlpItems(url)) };
-  // Vídeo aberto dentro de uma playlist: oferece abrir a playlist inteira.
-  const list = isYouTube(url) && new URL(url).searchParams.get('list');
-  if (list && !/^(RD|UL)/.test(list)) info.playlistUrl = `https://www.youtube.com/playlist?list=${encodeURIComponent(list)}`;
-  return info;
+  return listOffers(url, { ...base, ...(await ytdlpItems(url)) });
 }
 
 // Download a partir da busca salva: sem cookies (os links já vêm prontos e assinados), então não
@@ -1177,7 +1225,7 @@ async function receiveUpload(req, res, device) {
   if (shuttingDown) return bail(503, 'O servidor está reiniciando. Tenta de novo em alguns segundos.');
   const len = Number(req.headers['content-length']);
   if (!Number.isSafeInteger(len) || len <= 0) return bail(411, 'Não consegui ler o tamanho do arquivo. Tenta de novo.');
-  if (len > UPLOAD_MAX) return bail(413, `Arquivo grande demais: o máximo é ${Math.round(UPLOAD_MAX / 1024 ** 2)} MB.`);
+  if (len > UPLOAD_MAX) return bail(413, `Arquivo grande demais: o máximo é ${UPLOAD_MAX >= 1024 ** 3 ? `${+(UPLOAD_MAX / 1024 ** 3).toFixed(1)} GB`.replace('.', ',') : `${Math.round(UPLOAD_MAX / 1024 ** 2)} MB`}.`);
   if (disk(DOWNLOAD_DIR).freeBytes < MIN_FREE_BYTES + len * 3) return bail(507, 'O servidor está sem espaço agora. Tenta mais tarde.');
   if ((uploadingNow.get(device) || 0) >= 3) return bail(429, 'Espera os envios que já estão indo terminarem.');
   let recent = 0;
@@ -1363,8 +1411,17 @@ async function handle(req, res) {
     const url = normalizeUrl(body.url);
     if (!url) return sendJson(res, 400, { error: 'Esse site ainda não é suportado.' });
     const page = Math.min(Math.max(parseInt(body.page, 10) || 0, 0), 500);
+    const mix = body.mix === true;
     try {
-      const info = await getInfo(url, page);
+      let info;
+      // Vídeo do YouTube ainda não buscado: responde com o card rápido se ele chegar antes da busca
+      // completa, que segue por trás (o navegador pede de novo com full: true pra pegar o resto).
+      const quickId = !page && !mix && body.full !== true && isYouTube(url) && !isPlaylistUrl(url) && !cachedInfo(url) ? ytVideoId(url) : null;
+      if (quickId) {
+        const full = getInfo(url);
+        full.catch(() => {});
+        info = await Promise.race([full, quickYt(url, quickId).catch(() => null).then((q) => q || full)]);
+      } else info = await getInfo(url, page, mix);
       if (info.items?.some((it) => it.isLive)) return sendJson(res, 400, { error: 'Lives ao vivo não dá pra converter.' });
       return sendJson(res, 200, info);
     } catch (e) {
@@ -1424,7 +1481,7 @@ async function handle(req, res) {
     const page = Math.min(Math.max(parseInt(body.page, 10) || 0, 0), 500);
     let info;
     try {
-      info = await getInfo(url, page);
+      info = await getInfo(url, page, body.mix === true);
     } catch (e) {
       return sendJson(res, 502, { error: e.message });
     }
@@ -1539,4 +1596,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { jobArgs, subsList, redact, normalizeUrl, extractUrl, isPlaylistUrl, cleanFileName, server };
+module.exports = { jobArgs, subsList, redact, normalizeUrl, extractUrl, isPlaylistUrl, mixId, listOffers, cleanFileName, server };

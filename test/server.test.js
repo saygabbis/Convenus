@@ -257,7 +257,7 @@ test('conversor de arquivos: envia, converte e baixa; só o mesmo aparelho usa o
 test('envio maior que o limite é recusado pelo tamanho, sem esperar o arquivo chegar', async () => {
   const http = require('node:http');
   const res = await new Promise((resolve, reject) => {
-    const rq = http.request(`${BASE}/api/upload`, { method: 'POST', headers: { cookie, 'content-length': String(600 * 1024 * 1024) } }, resolve);
+    const rq = http.request(`${BASE}/api/upload`, { method: 'POST', headers: { cookie, 'content-length': String(5 * 1024 ** 3) } }, resolve);
     rq.on('error', reject);
     rq.write('x');
   });
