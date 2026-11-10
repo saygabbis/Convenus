@@ -10,6 +10,13 @@ const path = require('node:path');
 
 const a = process.argv.slice(2);
 const val = (flag) => a[a.indexOf(flag) + 1];
+//   FAKE_ARGS_LOG: grava os argumentos de cada chamada (uma linha JSON por chamada).
+//   FAKE_FAIL_LOADED: enquanto esse arquivo existir, download com --load-info-json dá 403.
+if (process.env.FAKE_ARGS_LOG) fs.appendFileSync(process.env.FAKE_ARGS_LOG, `${JSON.stringify(a)}\n`);
+if (a.includes('--load-info-json') && process.env.FAKE_FAIL_LOADED && fs.existsSync(process.env.FAKE_FAIL_LOADED)) {
+  console.error('ERROR: unable to download video data: HTTP Error 403: Forbidden');
+  process.exit(1);
+}
 
 if (a.includes('--version')) {
   console.log('2099.01.01');
@@ -25,7 +32,8 @@ if (a.includes('-J')) {
     thumbnail: 'https://i1.sndcdn.com/fake.jpg',
     formats: [{ format_id: 'h', vcodec: 'avc1', acodec: 'mp4a', height: 720, ext: 'mp4' }],
     subtitles: { pt: [{ ext: 'vtt', name: 'Português' }], live_chat: [{ ext: 'json' }] },
-    automatic_captions: { 'en-orig': [{ ext: 'vtt', name: 'English (Original)' }], fr: [{ ext: 'vtt', name: 'French' }] },
+    language: 'en',
+    automatic_captions: { 'en-orig': [{ ext: 'vtt', name: 'English (Original)' }], en: [{ ext: 'vtt', name: 'English' }], fr: [{ ext: 'vtt', name: 'French' }] },
   }));
   process.exit(0);
 }

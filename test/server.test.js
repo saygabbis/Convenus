@@ -14,6 +14,9 @@ const FAKE = path.join(__dirname, 'fixtures', 'fake-ytdlp.js');
 fs.chmodSync(FAKE, 0o755);
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'convenus-int-'));
 const SLOW = path.join(DATA, 'slow');
+const ARGS_LOG = path.join(DATA, 'args.log');
+const FAIL_LOADED = path.join(DATA, 'fail-loaded');
+const calls = () => fs.readFileSync(ARGS_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
 const PORT = 5300 + Math.floor(Math.random() * 600);
 const BASE = `http://127.0.0.1:${PORT}`;
 const URL_OK = 'https://soundcloud.com/tester/fake';
@@ -23,7 +26,7 @@ let cookie = '';
 function start(extraEnv = {}) {
   srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server.js'], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, YTDLP: FAKE, YTDLP_PROXY: '', POT_URL: '', FAKE_SLOW_FILE: SLOW, MIN_FREE_GB: '0', ...extraEnv },
+    env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, YTDLP: FAKE, YTDLP_PROXY: '', POT_URL: '', FAKE_SLOW_FILE: SLOW, FAKE_ARGS_LOG: ARGS_LOG, FAKE_FAIL_LOADED: FAIL_LOADED, MIN_FREE_GB: '0', ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   srv.output = '';
@@ -139,6 +142,37 @@ test('só a legenda (.srt); idioma inexistente é recusado', async () => {
   assert.equal(j.status, 'done', j.error);
   assert.match(j.filename, /\.srt$/);
   assert.equal((await post('/api/jobs', { url: URL_OK, item: 0, kind: 'srt', subs: { lang: 'xx' } })).status, 400);
+});
+
+test('download reaproveita a busca (--load-info-json, sem cookies) e não busca de novo', async () => {
+  fs.writeFileSync(ARGS_LOG, '');
+  const r = await post('/api/jobs', { url: URL_OK, item: 0, kind: 'mp3', quality: '320', title: 'Rapido' });
+  const j = await waitJob((await r.json()).id);
+  assert.equal(j.status, 'done', j.error);
+  const log = calls();
+  assert.equal(log.filter((c) => c.includes('-J')).length, 0, 'busca veio do cache, sem chamar o yt-dlp');
+  const dl = log.find((c) => c.includes('--load-info-json'));
+  assert.ok(dl, 'baixou a partir da busca salva');
+  assert.ok(!dl.includes('--cookies') && !dl.includes(URL_OK));
+  assert.deepEqual(fs.readdirSync(path.join(DATA, 'downloads', j.id)).filter((f) => f.startsWith('.busca')), [], 'json temporário apagado');
+});
+
+test('busca salva recusada (403): refaz o download do jeito completo e termina', async () => {
+  fs.writeFileSync(ARGS_LOG, '');
+  fs.writeFileSync(FAIL_LOADED, '1');
+  const r = await post('/api/jobs', { url: URL_OK, item: 0, kind: 'wav', title: 'Volta' });
+  const j = await waitJob((await r.json()).id);
+  fs.rmSync(FAIL_LOADED);
+  assert.equal(j.status, 'done', j.error);
+  const log = calls().filter((c) => !c.includes('-J'));
+  assert.ok(log[0].includes('--load-info-json'));
+  assert.ok(log.at(-1).includes(URL_OK), 'segunda tentativa com o link');
+});
+
+test('legendas: o idioma original não aparece duplicado', async () => {
+  const info = await (await post('/api/info', { url: URL_OK })).json();
+  const names = info.items[0].subs.map((x) => x.name);
+  assert.equal(new Set(names).size, names.length);
 });
 
 test('outro aparelho não vê nem baixa as conversões deste', async () => {

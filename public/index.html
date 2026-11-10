@@ -169,14 +169,31 @@
   .trk .t { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .trk .d { font-size: 12px; color: var(--mut); flex: none; }
   .subs { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 18px; padding-top: 18px; border-top: 1px solid color-mix(in srgb, var(--mut) 18%, transparent); }
-  .subs label { font-size: 13px; color: var(--mut); }
-  .subs select {
-    font: inherit; font-size: 14px; color: var(--ink); border: 0; border-radius: 14px; padding: 11px 42px 11px 14px; flex: 1 1 180px; min-width: 0; cursor: pointer;
-    -webkit-appearance: none; appearance: none; transition: background-color .25s;
-    background: var(--fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23939aa6' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center;
+  .subs .lbl { font-size: 13px; color: var(--mut); }
+  /* lista de escolha própria (a nativa do navegador não aceita estilo quando abre) */
+  .dd { position: relative; flex: 1 1 180px; min-width: 0; }
+  .dd-btn {
+    font: inherit; font-size: 14px; color: var(--ink); background: var(--fill); border: 0; border-radius: 14px; width: 100%;
+    padding: 11px 14px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left;
+    transition: background .25s;
   }
-  .subs select:hover { background-color: var(--fill-hover); }
-  .subs select:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+  .dd-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dd-btn svg { flex: none; color: var(--mut); transition: transform .3s cubic-bezier(.34,1.56,.64,1); }
+  .dd-btn:hover, .dd-btn[aria-expanded="true"] { background: var(--fill-hover); }
+  .dd-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
+  .dd-btn:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+  .dd-list {
+    position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 8px); margin: 0; padding: 6px; list-style: none;
+    background: var(--card); border-radius: 18px; max-height: 280px; overflow-y: auto; overscroll-behavior: contain;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--mut) 16%, transparent), 0 18px 40px -12px rgb(0 0 0 / .35);
+    transform-origin: top center; animation: pop .22s cubic-bezier(.22,1,.36,1) both;
+  }
+  @keyframes pop { from { opacity: 0; transform: translateY(-6px) scale(.97); } }
+  .dd-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 12px; font-size: 14px; cursor: pointer; outline: none; transition: background .15s, color .15s; }
+  .dd-list li:hover, .dd-list li:focus { background: var(--fill); }
+  .dd-list li[aria-selected="true"] { color: var(--ac-text); font-weight: 500; }
+  .dd-list li svg { flex: none; visibility: hidden; }
+  .dd-list li[aria-selected="true"] svg { visibility: visible; }
   .subs .chk { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); font-size: 14px; cursor: pointer; padding: 9px 14px 9px 10px; border-radius: 14px; background: var(--fill); transition: background .25s, opacity .25s; user-select: none; }
   .subs .chk:hover { background: var(--fill-hover); }
   .subs .chk:has(input:disabled) { opacity: .5; cursor: default; }
@@ -409,6 +426,7 @@ const ICONS = {
   wait: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
   dl: '<path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  down: '<path d="M6 9l6 6 6-6"/>',
   play: '<path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/>',
   music: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
   video: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9v6l5-3z"/>',
@@ -683,10 +701,15 @@ function subsBlock(it) {
   if (it.page != null) return '<p class="note mut" style="margin:14px 0 0">Legendas: abre o vídeo sozinho (fora da playlist) pra ver os idiomas.</p>';
   const subs = it.subs || [];
   if (!subs.length) return '<p class="note mut" style="margin:14px 0 0">Esse vídeo não tem legendas.</p>';
-  const opts = subs.map((x) => `<option value="${esc(x.lang)}"${x.lang === state.subLang ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
+  const all = [{ lang: '', name: 'Sem legenda' }, ...subs];
+  const current = all.find((x) => x.lang === (state.subLang || '')) || all[0];
+  const opts = all.map((x) => `<li role="option" tabindex="-1" data-lang="${esc(x.lang)}" aria-selected="${x === current}"><span>${esc(x.name)}</span>${svg('ok', 16, 2.6)}</li>`).join('');
   return `<div class="subs">
-    <label for="subLang">Legenda</label>
-    <select id="subLang"><option value="">Sem legenda</option>${opts}</select>
+    <span class="lbl" id="subLbl">Legenda</span>
+    <div class="dd" id="subDD">
+      <button type="button" class="dd-btn" id="subBtn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="subLbl subBtn"><span>${esc(current.name)}</span>${svg('down', 16, 2.4)}</button>
+      <ul class="dd-list" role="listbox" aria-labelledby="subLbl" hidden>${opts}</ul>
+    </div>
     ${state.kind === 'mp4' ? `<label class="chk"><input type="checkbox" id="subEmbed" ${state.subEmbed !== false ? 'checked' : ''}${state.subLang ? '' : ' disabled'}>Colocar dentro do MP4</label>` : ''}
     <button class="k" type="button" id="subOnly"${state.subLang ? '' : ' disabled'}>Baixar só a legenda (.srt)</button>
   </div>`;
@@ -726,9 +749,42 @@ $('#chips').addEventListener('click', (e) => {
 });
 
 $('#goWrap').addEventListener('change', (e) => {
-  if (e.target.id === 'subLang') { state.subLang = e.target.value; renderPost(); }
   if (e.target.id === 'subEmbed') state.subEmbed = e.target.checked;
 });
+
+// ---------- lista de legendas ----------
+function ddOpen(open) {
+  const btn = $('#subBtn'), list = $('#subDD .dd-list');
+  if (!btn) return;
+  btn.setAttribute('aria-expanded', open);
+  list.hidden = !open;
+  if (open) (list.querySelector('[aria-selected="true"]') || list.firstElementChild).focus({ preventScroll: false });
+}
+function ddPick(li) {
+  state.subLang = li.dataset.lang;
+  renderPost();
+  $('#subBtn')?.focus();
+}
+$('#goWrap').addEventListener('click', (e) => {
+  if (e.target.closest('#subBtn')) return ddOpen($('#subBtn').getAttribute('aria-expanded') !== 'true');
+  const li = e.target.closest('#subDD [role=option]');
+  if (li) ddPick(li);
+});
+$('#goWrap').addEventListener('keydown', (e) => {
+  const list = $('#subDD .dd-list');
+  if (!list) return;
+  if (e.target.id === 'subBtn' && ['ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); return ddOpen(true); }
+  const li = e.target.closest('#subDD [role=option]');
+  if (!li) return;
+  const items = [...list.children], i = items.indexOf(li);
+  if (e.key === 'ArrowDown') { e.preventDefault(); items[Math.min(i + 1, items.length - 1)].focus(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); items[Math.max(i - 1, 0)].focus(); }
+  else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
+  else if (e.key === 'End') { e.preventDefault(); items.at(-1).focus(); }
+  else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ddPick(li); }
+  else if (e.key === 'Escape' || e.key === 'Tab') { ddOpen(false); if (e.key === 'Escape') $('#subBtn').focus(); }
+});
+document.addEventListener('click', (e) => { if (!e.target.closest('#subDD')) ddOpen(false); });
 
 // ---------- perfil ----------
 function renderProfile() {

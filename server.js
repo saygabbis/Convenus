@@ -34,7 +34,9 @@ const HISTORY_MS = JOB_TTL_MS;
 // Cada navegador recebe um id aleatório (cookie HttpOnly) e só vê as próprias conversões.
 const DEVICE_COOKIE = 'cv_dev';
 const DEVICE_RE = new RegExp(`(?:^|;\\s*)${DEVICE_COOKIE}=([A-Za-z0-9_-]{22,64})`);
-const INFO_TTL_MS = 10 * 60_000;
+// Busca fica guardada 30 min: o mesmo link de novo é na hora, e o download reaproveita a busca
+// (os links de download do YouTube valem umas 6 h).
+const INFO_TTL_MS = 30 * 60_000;
 const INFO_TIMEOUT_MS = Number(process.env.INFO_TIMEOUT_SEC || 120) * 1000;
 const JOB_TIMEOUT_MS = Number(process.env.JOB_TIMEOUT_MIN || 240) * 60_000;
 const JOB_IDLE_MS = Number(process.env.JOB_IDLE_MIN || 10) * 60_000;
@@ -71,6 +73,9 @@ const hostIn = (host, list) => list.some((d) => host === d || host.endsWith(`.${
 const jobs = new Map();
 const infoCache = new Map();
 const infoPending = new Map(); // mesma busca ao mesmo tempo = uma extração só
+// JSON completo do yt-dlp de cada vídeo buscado (url -> { at, raw, proxied }): o download usa
+// ele com --load-info-json e não precisa extrair tudo de novo (~10 s a menos por download).
+const rawInfo = new Map();
 const queue = [];
 let running = 0;
 let shuttingDown = false;
@@ -287,7 +292,10 @@ function subsList(e) {
     if (lang === 'live_chat' || !tracks?.length) continue;
     out.push({ lang, name: tracks[0].name || lang, auto: false });
   }
-  const orig = Object.keys(e.automatic_captions || {}).filter((l) => l.endsWith('-orig') || l === e.language);
+  // O YouTube manda o idioma original duas vezes ("en-orig" e "en"): fica só com o "-orig".
+  const autos = Object.keys(e.automatic_captions || {});
+  const origs = autos.filter((l) => l.endsWith('-orig'));
+  const orig = origs.length ? origs : autos.filter((l) => l === e.language);
   for (const lang of orig) {
     if (out.some((x) => x.lang === lang.replace(/-orig$/, ''))) continue;
     out.push({ lang, name: `${(e.automatic_captions[lang][0]?.name || lang).replace(/\s*\(.*\)$/, '')} (automática)`, auto: true });
@@ -296,9 +304,30 @@ function subsList(e) {
 }
 
 // yt-dlp -J → um item "nativo" por vídeo/áudio (playlist = vários, com o índice pro --playlist-items).
+// Id do vídeo do YouTube direto do link (pra conferir as capas enquanto o yt-dlp trabalha).
+function ytVideoId(url) {
+  const u = new URL(url);
+  if (!YT_HOSTS.test(u.hostname)) return null;
+  const id = /youtu\.be$/i.test(u.hostname) ? u.pathname.slice(1).split('/')[0]
+    : u.searchParams.get('v') || (u.pathname.match(/^\/(?:shorts|live|embed)\/([\w-]{11})/) || [])[1];
+  return /^[\w-]{11}$/.test(id || '') ? id : null;
+}
+
 async function ytdlpItems(url) {
-  const j = JSON.parse(await withYt(url, () => runCapture([...baseArgs(url), '-J', '--', url])));
+  const guessId = ytVideoId(url);
+  const thumbsEarly = guessId ? thumbOptions(guessId) : null; // em paralelo com o yt-dlp
+  const t0 = Date.now();
+  let proxied = false;
+  const raw = await withYt(url, () => {
+    const args = baseArgs(url);
+    proxied = args.includes('--proxy');
+    return runCapture([...args, '-J', '--', url]);
+  });
+  const j = JSON.parse(raw);
+  console.log(`[busca] ${platformOf(url)} em ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   const entries = j._type === 'playlist' && Array.isArray(j.entries) ? j.entries.filter(Boolean) : [j];
+  if (j._type !== 'playlist' && j.formats?.length) rawInfo.set(url, { at: Date.now(), raw, proxied });
+  while (rawInfo.size > 40) rawInfo.delete(rawInfo.keys().next().value); // teto de memória
   if (!entries.length) throw new Error('Não achei nenhum vídeo nesse link.');
   const items = entries.map((e, i) => {
     const formats = e.formats || [];
@@ -329,7 +358,7 @@ async function ytdlpItems(url) {
     thumbnail: first.thumbnail || j.thumbnail || null,
     duration: first.duration || 0,
     items,
-    thumbs: isYouTube(url) ? await thumbOptions(first.id) : bestThumb(first),
+    thumbs: isYouTube(url) ? await (guessId === first.id ? thumbsEarly : thumbOptions(first.id)) : bestThumb(first),
   };
 }
 
@@ -436,9 +465,18 @@ async function resolveInfo(url, page = 0) {
   return info;
 }
 
+// Download a partir da busca salva: sem cookies (os links já vêm prontos e assinados), então não
+// mexe no login e não precisa esperar a vez no YouTube. Mesmo caminho de rede da busca (os links
+// do YouTube valem só pro IP que buscou).
+function loadedArgs(job) {
+  return ['--js-runtimes', 'node', '--no-warnings', '--no-color', ...(job.loaded.proxied && PROXY ? ['--proxy', PROXY] : [])];
+}
+
 function jobArgs(job) {
   const args = [
-    ...baseArgs(job.url),
+    ...(job.loaded ? loadedArgs(job) : baseArgs(job.url)),
+    // Pedaços de 10 MB: o YouTube limita a velocidade de downloads longos de uma vez só.
+    '--http-chunk-size', '10M', '--concurrent-fragments', '4',
     '--newline',
     '--progress-template', 'download:@@P %(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s',
     '--print', 'after_move:@@F %(filepath)s',
@@ -469,6 +507,10 @@ function jobArgs(job) {
     args.push('-f', 'ba/b', '-x', '--audio-format', 'wav');
   }
 
+  if (job.loaded) {
+    args.push('--load-info-json', job.loaded.file);
+    return args;
+  }
   if (job.mode === 'search') args.push('--playlist-items', '1');
   else if (job.index) args.push('--playlist-items', String(job.index));
   args.push('--', job.url);
@@ -613,6 +655,15 @@ async function startJob(job) {
   fs.mkdirSync(job.dir, { recursive: true });
   persist(job);
   if (job.mode === 'direct') return startDirectJob(job);
+  // Tem a busca guardada: baixa direto dela, sem esperar a vez no YouTube.
+  if (job.preload) {
+    const file = path.join(job.dir, '.busca.info.json');
+    fs.writeFileSync(file, job.preload.raw, { mode: 0o600 });
+    job.loaded = { file, proxied: job.preload.proxied };
+    job.preload = null;
+    job.phase = 'Baixando';
+    return runYtdlpJob(job);
+  }
   if (isYouTubeJob(job)) {
     job.phase = 'Esperando a vez no YouTube';
     await ytAcquire();
@@ -668,7 +719,28 @@ function runYtdlpJob(job) {
   job.proc = h.child;
   job.stop = h.stop;
 
-  h.done.then((r) => {
+  h.done.then(async (r) => {
+    if (job.loaded) {
+      fs.rmSync(job.loaded.file, { force: true });
+      // Link da busca vencido ou recusado: refaz do jeito completo (busca nova, com a vez no YouTube).
+      if (r.code !== 0 && !shuttingDown && job.status !== 'canceled') {
+        console.log(`[job ${job.id}] download pela busca salva falhou; refazendo do zero`);
+        job.loaded = null;
+        job.phase = 'Tentando de novo';
+        job.percent = 0;
+        job.lastPct = 0;
+        if (isYouTubeJob(job)) {
+          job.phase = 'Esperando a vez no YouTube';
+          await ytAcquire();
+          job.ytLocked = true;
+          if (job.status === 'canceled' || shuttingDown) return finishJob(job, { code: 1, stderr: '' });
+          if (!ytLoggedIn()) restoreCookies();
+          job.phase = 'Baixando';
+        }
+        return runYtdlpJob(job);
+      }
+      job.loaded = null;
+    }
     // Login sumiu no meio: restaura a cópia boa e tenta de novo uma vez, ainda segurando a vez no YouTube.
     if (r.code !== 0 && !shuttingDown && job.status !== 'canceled' && job.ytLocked && !job.retried && loginTrouble(r.stderr) && restoreCookies()) {
       job.retried = true;
@@ -682,10 +754,10 @@ function runYtdlpJob(job) {
   });
 }
 
-function createJob({ mode = 'native', url, index = null, named = false, duration = 0, kind, quality, title, opts = {}, platform = '', device = null }) {
+function createJob({ mode = 'native', url, index = null, named = false, duration = 0, kind, quality, title, opts = {}, platform = '', device = null, preload = null }) {
   const id = crypto.randomBytes(8).toString('hex');
   const job = {
-    id, mode, url, index, named, duration, kind, quality, title: String(title || '').slice(0, 300), opts, platform, device,
+    id, mode, url, index, named, duration, kind, quality, title: String(title || '').slice(0, 300), opts, platform, device, preload,
     dir: path.join(DOWNLOAD_DIR, id),
     status: 'queued', phase: 'Na fila', percent: 0, lastPct: 0, speed: '', eta: '',
     error: null, file: null, size: 0, attempts: 0, createdAt: Date.now(), startedAt: 0, finishedAt: 0, proc: null,
@@ -773,6 +845,7 @@ function cleanup(now = Date.now()) {
   }
   store.prune(now - HISTORY_MS);
   for (const [key, hit] of infoCache) if (now - hit.at > INFO_TTL_MS) infoCache.delete(key);
+  for (const [key, hit] of rawInfo) if (now - hit.at > INFO_TTL_MS) rawInfo.delete(key);
 }
 
 setInterval(() => {
@@ -930,6 +1003,7 @@ async function renewCookies(req, res) {
   ytState.lastOkAt = Date.now();
   ytState.lastBotAt = 0;
   infoCache.clear();
+  rawInfo.clear();
   auth.clearAttempts(`renew:${clientIp(req)}`);
   console.log('[cookies] renovados pela página /renovar: validados antes da troca');
   return sendJson(res, 200, { ok: true, message: 'Login renovado e testado. O YouTube voltou a funcionar!' });
@@ -1094,6 +1168,9 @@ async function handle(req, res) {
       : item.native
         ? { ...common, mode: 'native', url: item.entryUrl || url, index: item.entryUrl ? null : item.index, named: Boolean(item.entryUrl) }
         : { ...common, mode: 'direct', url: item.url, duration: item.duration };
+    // Vídeo único que acabou de ser buscado: o download parte dessa busca.
+    const saved = rawInfo.get(url);
+    if (spec.mode === 'native' && !spec.index && spec.url === url && saved && Date.now() - saved.at < INFO_TTL_MS) spec.preload = saved;
     return sendJson(res, 201, publicJob(createJob(spec)));
   }
 
