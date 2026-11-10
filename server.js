@@ -853,21 +853,23 @@ function runYtdlpJob(job) {
   // Uma barra só, do começo ao fim: download (vídeo e áudio) + conversão/junção no ffmpeg.
   const dlShare = DL_SHARE[job.kind] || 1;
   const overall = (dl, pp) => Math.min(99.5, 100 * (dlShare * dl + (1 - dlShare) * pp));
-  const startPP = (phase) => {
-    job.phase = phase;
-    job.speed = '';
-    job.eta = '';
-    job.percent = overall(1, 0);
+  // As linhas [Merger]/[ExtractAudio] não aparecem (o --print silencia o yt-dlp): quem diz que a
+  // conversão começou é o próprio arquivo de progresso do ffmpeg, olhado desde o início do download.
+  const watchPP = () => {
     if (ppTimer || !mediaDur) return;
-    ppStart = Date.now();
     const file = path.join(job.dir, PROGRESS_FILE);
     ppTimer = setInterval(() => {
       const us = lastOutTime(file);
       if (!us) return;
+      if (!ppStart) {
+        ppStart = Date.now();
+        job.phase = job.kind === 'mp4' ? 'Juntando vídeo e áudio' : `Convertendo pra ${job.kind.toUpperCase()}`;
+        job.speed = '';
+      }
       const frac = Math.min(1, us / 1e6 / mediaDur);
-      job.percent = overall(1, frac);
-      const left = frac > 0.02 ? ((Date.now() - ppStart) / 1000) * (1 - frac) / frac : 0;
-      job.eta = left ? fmtEta(left) : '';
+      job.percent = Math.max(job.percent, overall(1, frac));
+      const left = frac > 0.02 && frac < 1 ? ((Date.now() - ppStart) / 1000) * (1 - frac) / frac : 0;
+      job.eta = left >= 1 ? fmtEta(left) : '';
       persist(job, { progress: true });
     }, 700);
   };
@@ -880,20 +882,18 @@ function runYtdlpJob(job) {
         job.lastPct = n;
         // MP4: vídeo e depois áudio (o áudio é bem menor). MP3/WAV: um só.
         const dl = job.kind === 'mp4' ? (streams === 0 ? 0.85 * n / 100 : 0.85 + 0.15 * n / 100) : n / 100;
-        job.percent = overall(Math.min(1, dl), 0);
+        if (!ppStart) job.percent = overall(Math.min(1, dl), 0);
       }
+      if (ppStart) return;
       job.speed = speed && speed !== 'NA' && speed !== 'Unknown' ? speed : '';
       job.eta = eta && eta !== 'NA' && eta !== 'Unknown' ? eta : '';
       job.phase = job.kind === 'mp4' ? (streams === 0 ? 'Baixando vídeo' : 'Baixando áudio') : 'Baixando áudio';
       persist(job, { progress: true });
     } else if (line.startsWith('@@D ')) {
       mediaDur = parseFloat(line.slice(4)) || 0;
+      watchPP();
     } else if (line.startsWith('@@F ')) {
       job.file = line.slice(4).trim();
-    } else if (/^\[Merger\]/.test(line)) {
-      startPP('Juntando vídeo e áudio');
-    } else if (/^\[ExtractAudio\]/.test(line)) {
-      startPP(`Convertendo pra ${job.kind.toUpperCase()}`);
     } else if (/^\[(EmbedThumbnail|Metadata)\]/.test(line)) {
       job.phase = 'Finalizando';
     } else if (/^\[EmbedSubtitle\]/.test(line)) {
