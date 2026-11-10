@@ -14,6 +14,7 @@ const { Store } = require('./lib/store');
 const { Auth } = require('./lib/auth');
 const cookieFiles = require('./lib/cookies');
 const { systemChecks, disk } = require('./lib/health');
+const { YtWorker } = require('./lib/ytworker');
 
 const PORT = Number(process.env.PORT || 5180);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -88,6 +89,10 @@ const auth = new Auth(process.env.ADMIN_TOKEN_FILE || path.join(DATA_DIR, 'admin
 // ---------- yt-dlp ----------
 
 const isYouTube = (url) => YT_HOSTS.test(new URL(url).hostname);
+
+// yt-dlp sempre aberto pras buscas (YTDLP_WORKER=0 desliga).
+const ytWorker = new YtWorker({ ytdlp: YTDLP });
+if (process.env.YTDLP_WORKER !== '0' && require.main === module) ytWorker.start();
 
 // O yt-dlp regrava o cookies.txt; quando o Google desloga a conta, SID/LOGIN_INFO somem dele.
 const ytLoggedIn = () => cookieFiles.hasLogin(COOKIES);
@@ -213,8 +218,11 @@ function redact(text) {
 }
 
 // yt-dlp que devolve texto (busca de informações). Nunca fica pendurado: timeout e limite de saída.
+// Usa o yt-dlp sempre aberto quando ele está livre; senão (ou se ele cair no meio), o normal.
 async function runCapture(args, { timeoutMs = INFO_TIMEOUT_MS, maxStdout = 64 * 1024 * 1024 } = {}) {
-  const r = await proc.run(YTDLP, args, { timeoutMs, maxStdout, killOnOverflow: true }).done;
+  let r = ytWorker.available() ? await ytWorker.run(args, { timeoutMs }) : null;
+  if (r && r.stdout.length > maxStdout) r.overflow = true;
+  if (!r || r.crashed) r = await proc.run(YTDLP, args, { timeoutMs, maxStdout, killOnOverflow: true }).done;
   if (r.code === 0 && !r.overflow) return r.stdout;
   if (r.error) throw new Error(r.error.code === 'ENOENT' ? 'O yt-dlp não está instalado no servidor.' : 'Não consegui rodar o yt-dlp.');
   if (r.timedOut) throw new Error('A plataforma demorou demais pra responder. Tenta de novo.');
@@ -1018,6 +1026,7 @@ async function statusPayload() {
     youtubeLogin: ytLoggedIn(),
     node: { version: process.version, uptimeSec: Math.round(process.uptime()), rssMB: Math.round(process.memoryUsage().rss / 1048576) },
     queue: { running, queued: queue.length, active, ytWaiting: ytLock.waiters.length, maxRunning: MAX_RUNNING },
+    ytdlpWorker: { ready: ytWorker.ready, busy: ytWorker.busy, served: ytWorker.served },
     ...sys,
   };
 }
@@ -1222,6 +1231,7 @@ async function shutdown(signal) {
   }
   // Se a tarefa ainda estava esperando a vez no YouTube, o startJob vê shuttingDown e sai.
   for (const job of jobs.values()) if (job.stop) job.stop();
+  ytWorker.stop();
   await proc.killAll(8000);
   store.close();
   process.exit(0);

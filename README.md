@@ -30,7 +30,7 @@ Em produção, o recomendado são os serviços systemd de `deploy/systemd/` (vej
 - **Acesso:** o site é aberto. Só a administração (`/renovar` e `/api/cookies`) pede o código, que fica em `admin.token` (`cat ~/Bots/Convert/admin.token`). Pra trocar o código e deslogar todos os aparelhos: `printf 'novo' > admin.token` e reinicie o site.
 - **Histórico por aparelho:** cada navegador ganha um id aleatório no cookie `cv_dev` (HttpOnly) e só vê, baixa e apaga as próprias conversões. Conversão de outro aparelho responde 404.
 - **Cookies do YouTube:** pela página `/renovar`, no site. Eles nunca vão pro git.
-- **Velocidade:** a busca fica guardada 30 min e o download parte dela (`--load-info-json`, sem cookies), então não extrai tudo de novo nem espera a vez no YouTube. Se o link salvo for recusado, refaz do jeito completo sozinho. Cada busca registra o tempo no log (`[busca] YouTube em X s`).
+- **Velocidade:** a busca fica guardada 30 min e o download parte dela (`--load-info-json`, sem cookies), então não extrai tudo de novo nem espera a vez no YouTube. Se o link salvo for recusado, refaz do jeito completo sozinho. Cada busca registra o tempo no log (`[busca] YouTube em X s`). As buscas usam um yt-dlp sempre aberto (`lib/ytdlp_worker.py`, ~1,4 s a menos por busca): um pedido por vez, cookies lidos e gravados a cada pedido como no normal; ocupado, travado ou sem Python, cai pro yt-dlp normal, e recicla sozinho quando o yt-dlp é atualizado. `YTDLP_WORKER=0` desliga.
 - **Arquivos:** tudo some 1 h depois de pronto (`JOB_TTL_MIN`): o arquivo em `downloads/` e a linha do histórico. "Limpar" no site apaga na hora. O start **não** apaga nada antes do prazo; a limpeza roda a cada 2 min e nunca toca tarefa ativa.
 
 ### Variáveis opcionais
