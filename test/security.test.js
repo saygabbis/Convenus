@@ -57,6 +57,7 @@ test('Mix do YouTube: vídeo dentro da Mix oferece a Mix; playlist normal oferec
 test('progresso real na conversão: o ffmpeg grava out_time na pasta da tarefa; legenda sozinha não usa', () => {
   const mp3 = jobArgs({ mode: 'native', url: 'https://soundcloud.com/a/b', kind: 'mp3', quality: '320', title: 'a', dir: '/tmp/x y', opts: {} });
   assert.ok(mp3.includes('before_dl:@@D %(duration)s'));
+  assert.ok(mp3.includes('--progress'), 'o --print silencia o progresso; --progress traz de volta');
   assert.ok(mp3.includes(`ExtractAudio+ffmpeg_o:-progress "${path.join('/tmp/x y', '.progresso')}"`), 'caminho entre aspas (o yt-dlp separa por espaço)');
   const srt = jobArgs({ mode: 'native', url: 'https://soundcloud.com/a/b', kind: 'srt', title: 'a', dir: '/tmp/x', opts: { subs: { lang: 'pt' } } });
   assert.ok(!srt.some((a) => /ffmpeg_o:-progress/.test(a)));

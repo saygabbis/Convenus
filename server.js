@@ -582,7 +582,8 @@ function jobArgs(job) {
     ...(job.loaded ? loadedArgs(job) : baseArgs(job.url)),
     // Pedaços de 10 MB: o YouTube limita a velocidade de downloads longos de uma vez só.
     '--http-chunk-size', '10M', '--concurrent-fragments', '4',
-    '--newline',
+    // --print deixa o yt-dlp em modo silencioso: sem --progress ele nem mostra o progresso (a fila ficava em 0%).
+    '--newline', '--progress',
     '--progress-template', 'download:@@P %(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s',
     '--print', 'after_move:@@F %(filepath)s',
     '--windows-filenames',
@@ -802,7 +803,7 @@ async function startJob(job) {
     fs.writeFileSync(file, job.preload.raw, { mode: 0o600 });
     job.loaded = { file, proxied: job.preload.proxied };
     job.preload = null;
-    job.phase = 'Baixando';
+    job.phase = 'Preparando o download';
     return runYtdlpJob(job);
   }
   if (isYouTubeJob(job)) {
@@ -811,7 +812,7 @@ async function startJob(job) {
     job.ytLocked = true;
     if (job.status === 'canceled' || shuttingDown) return finishJob(job, { code: 1, stderr: '' });
     if (!ytLoggedIn()) restoreCookies();
-    job.phase = 'Baixando';
+    job.phase = 'Preparando o download';
   }
   runYtdlpJob(job);
 }
@@ -932,7 +933,7 @@ function runYtdlpJob(job) {
           job.ytLocked = true;
           if (job.status === 'canceled' || shuttingDown) return finishJob(job, { code: 1, stderr: '' });
           if (!ytLoggedIn()) restoreCookies();
-          job.phase = 'Baixando';
+          job.phase = 'Preparando o download';
         }
         return runYtdlpJob(job);
       }
