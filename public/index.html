@@ -234,6 +234,9 @@
   .chk input:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
   .subs .k { flex: 1 1 100%; }
   .more { width: 100%; margin-top: 12px; }
+  .pager { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .pager .k { padding: 10px 16px; }
+  .pager .k:disabled { opacity: .4; cursor: default; }
   .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0 0 22px; }
   .tabs .k { flex-direction: column; gap: 6px; padding: 16px 6px; border-radius: 18px; font-size: 15px; }
   .label { font-size: 13px; margin: 0 0 12px; }
@@ -1455,10 +1458,20 @@ function renderSection() {
   const shape = s.id === 'shorts' || (s.id === 'videos' && /tiktok/i.test(s.url)) ? ' tall' : s.kind === 'audio' || s.kind === 'post' ? ' sq' : '';
   const canPick = s.kind === 'video' || s.kind === 'audio';
   let html = '';
-  if (d.items.length) html += `<div class="pgrid${shape}" id="sGrid">${d.items.map((x, n) => secTile(x, n, s, d)).join('')}</div>`;
+  // Por página (12 no celular, 24 no PC); a seleção usa o índice geral, então fica salva entre páginas.
+  const per = innerWidth < 640 ? 12 : 24;
+  const pages = Math.max(1, Math.ceil(d.items.length / per));
+  d.pg = Math.min(d.pg || 0, d.loading ? d.pg || 0 : pages - 1);
+  const from = d.pg * per, shown = d.items.slice(from, from + per);
+  if (shown.length) html += `<div class="pgrid${shape}" id="sGrid">${shown.map((x, k) => secTile(x, from + k, s, d)).join('')}</div>`;
   else if (d.loading) html += `<div class="pgrid${shape}">${Array.from({ length: 6 }, () => '<div class="pt skel"><div class="pic"></div><div class="tt"></div></div>').join('')}</div>`;
   if (d.err) html += `<div class="msg-err" style="margin-top:12px">${esc(d.err)}</div>`;
-  if (d.items.length && (d.hasMore || d.loading)) html += `<button class="k more" type="button" id="sMore"${d.loading ? ' disabled' : ''}>${d.loading ? 'Carregando…' : 'Carregar mais'}</button>`;
+  if (d.items.length && (pages > 1 || d.hasMore || d.loading)) {
+    const next = d.pg < pages - 1 || d.hasMore;
+    html += `<div class="pager"><button class="k" type="button" data-pg="-1"${d.pg ? '' : ' disabled'} aria-label="Página anterior">‹ Anterior</button>
+      <span class="mut">${d.loading && d.pg >= pages ? 'Carregando…' : `Página ${d.pg + 1} de ${pages}${d.hasMore ? '+' : ''}`}</span>
+      <button class="k" type="button" data-pg="1"${next && !d.loading ? '' : ' disabled'} aria-label="Próxima página">Próxima ›</button></div>`;
+  }
   else if (!d.items.length && d.err && !d.loading) html += '<button class="k more" type="button" id="sRetry">Tentar de novo</button>';
   if (canPick && d.items.length) html += `<div id="sSel">${selbarHtml(s, d)}</div>`;
   $('#sBody').innerHTML = html;
@@ -1512,7 +1525,14 @@ $('#sBody').addEventListener('click', async (e) => {
   if (!d) return;
   const op = e.target.closest('[data-open]');
   if (op) return openEntry(d.items[Number(op.dataset.open)].entryUrl);
-  if (e.target.closest('#sMore')) return loadSection(s.id);
+  const pgb = e.target.closest('[data-pg]');
+  if (pgb) {
+    const per = innerWidth < 640 ? 12 : 24;
+    d.pg = Math.max(0, (d.pg || 0) + Number(pgb.dataset.pg));
+    $('#sTabs').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (d.hasMore && d.items.length < (d.pg + 1) * per) return loadSection(s.id);
+    return renderSection();
+  }
   if (e.target.closest('#sRetry')) { d.page = -1; d.hasMore = true; return loadSection(s.id); }
   if (e.target.closest('#sAll')) {
     if (d.picked.size === d.items.length) d.picked.clear(); else d.items.forEach((_, n) => d.picked.add(n));
