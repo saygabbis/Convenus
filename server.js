@@ -17,6 +17,7 @@ const cookieFiles = require('./lib/cookies');
 const { systemChecks, disk } = require('./lib/health');
 const { YtWorker } = require('./lib/ytworker');
 const convert = require('./lib/convert');
+const compressor = require('./lib/compress');
 
 // Tudo que o servidor cria (downloads, envios, banco) fica só pro dono do processo (tem outro
 // usuário na VPS).
@@ -264,10 +265,11 @@ async function runCapture(args, { timeoutMs = INFO_TIMEOUT_MS, maxStdout = 64 * 
 function isChannelUrl(url) {
   const { hostname, pathname } = new URL(url);
   return YT_HOSTS.test(hostname) && !/youtu\.be$/i.test(hostname)
-    && /^\/(@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+)(\/[^/]*)?\/?$/.test(pathname);
+    && /^\/(@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+)(\/(featured|about|community|posts))?\/?$/.test(pathname);
 }
 
-const isProfileUrl = (url) => isChannelUrl(url) || Boolean(providers.match(url)?.profile);
+// Categoria de perfil (aba de vídeos, faixas…) é lista de itens, não perfil.
+const isProfileUrl = (url) => !sectionKind(url) && (isChannelUrl(url) || Boolean(sectionsFor(url)) || Boolean(providers.match(url)?.profile));
 
 // Fora do YouTube não há tamanhos fixos de capa: oferece a maior que a plataforma tiver.
 function bestThumb(j) {
@@ -427,9 +429,101 @@ async function ytdlpItems(url) {
 
 // Playlist do YouTube/YouTube Music ou set do SoundCloud: lista leve (sem consultar vídeo por vídeo).
 function isPlaylistUrl(url) {
+  if (sectionKind(url)) return true;
   const u = new URL(url);
   if (YT_HOSTS.test(u.hostname)) return u.pathname === '/playlist' || (u.searchParams.has('list') && !u.searchParams.has('v') && !/youtu\.be$/i.test(u.hostname));
   return /(^|\.)soundcloud\.com$/i.test(u.hostname) && /\/sets\//.test(u.pathname);
+}
+
+// ---------- perfil por categorias (vídeos, shorts, lives, playlists, faixas, clipes…) ----------
+// Cada categoria é um link de "aba" que o yt-dlp lista como playlist; o site carrega uma por vez.
+
+const YT_TABS = [['videos', 'Vídeos', 'video'], ['shorts', 'Shorts', 'video'], ['streams', 'Lives', 'video'], ['playlists', 'Playlists', 'list'], ['releases', 'Álbuns', 'list'], ['podcasts', 'Podcasts', 'list']];
+const SC_TABS = [['tracks', 'Faixas', 'audio'], ['popular-tracks', 'Populares', 'audio'], ['albums', 'Álbuns', 'list'], ['sets', 'Playlists', 'list'], ['reposts', 'Reposts', 'audio']];
+const SC_RESERVED = new Set(['discover', 'search', 'you', 'stream', 'charts', 'upload', 'pages', 'settings', 'messages', 'notifications', 'terms-of-use', 'pro', 'mobile', 'people', 'tags']);
+const TW_RESERVED = new Set(['directory', 'videos', 'search', 'settings', 'subscriptions', 'inventory', 'wallet', 'downloads', 'p', 'jobs', 'turbo', 'prime']);
+
+/** Se o link é de uma categoria de perfil, o tipo dos itens dela: 'video' | 'audio' | 'list' | 'post'. */
+function sectionKind(url) {
+  const u = new URL(url);
+  const host = u.hostname.toLowerCase();
+  const parts = u.pathname.split('/').filter(Boolean);
+  if (YT_HOSTS.test(host) && !/youtu\.be$/i.test(host)) {
+    const m = /^\/(?:@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+)\/([a-z]+)\/?$/.exec(u.pathname);
+    return m ? (YT_TABS.find((t) => t[0] === m[1]) || [])[2] || null : null;
+  }
+  if (/(^|\.)soundcloud\.com$/.test(host) && parts.length === 2 && !SC_RESERVED.has(parts[0])) return (SC_TABS.find((t) => t[0] === parts[1]) || [])[2] || null;
+  if (/(^|\.)twitch\.tv$/.test(host) && parts.length === 2 && !TW_RESERVED.has(parts[0]) && ['videos', 'clips'].includes(parts[1])) return 'video';
+  if (/(^|\.)tiktok\.com$/.test(host) && parts.length === 1 && /^@[\w.-]+$/.test(parts[0]) && u.hash === '#videos') return 'video';
+  if (/(^|\.)bsky\.app$/.test(host) && parts[0] === 'profile' && parts.length === 2 && u.hash === '#midia') return 'post';
+  return null;
+}
+
+/** Categorias de um link de perfil (ou null se não for perfil com categorias). */
+function sectionsFor(url) {
+  const u = new URL(url);
+  const host = u.hostname.toLowerCase();
+  const parts = u.pathname.split('/').filter(Boolean);
+  const mk = (list, base) => list.map(([id, label, kind]) => ({ id, label, kind, url: `${base}/${id}` }));
+  if (isChannelUrl(url)) {
+    const seg = /^\/(@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+)/.exec(u.pathname)[1];
+    return { platform: 'YouTube', sections: mk(YT_TABS, `https://www.youtube.com/${seg}`) };
+  }
+  if (/(^|\.)soundcloud\.com$/.test(host) && parts.length === 1 && !SC_RESERVED.has(parts[0])) {
+    return { platform: 'SoundCloud', sections: mk(SC_TABS, `https://soundcloud.com/${parts[0]}`) };
+  }
+  if (/(^|\.)twitch\.tv$/.test(host) && parts.length === 1 && !TW_RESERVED.has(parts[0])) {
+    return { platform: 'Twitch', sections: [
+      { id: 'videos', label: 'Vídeos', kind: 'video', url: `https://www.twitch.tv/${parts[0]}/videos` },
+      { id: 'clips', label: 'Clipes', kind: 'video', url: `https://www.twitch.tv/${parts[0]}/clips` },
+    ] };
+  }
+  if (/(^|\.)tiktok\.com$/.test(host) && parts.length === 1 && /^@[\w.-]+$/.test(parts[0]) && !u.hash) {
+    return { platform: 'TikTok', sections: [{ id: 'videos', label: 'Vídeos', kind: 'video', url: `https://www.tiktok.com/${parts[0]}#videos` }] };
+  }
+  if (/(^|\.)bsky\.app$/.test(host) && parts[0] === 'profile' && parts.length === 2 && !u.hash) {
+    return { platform: 'Bluesky', sections: [{ id: 'midia', label: 'Fotos e vídeos', kind: 'post', url: `https://bsky.app/profile/${parts[1]}#midia` }] };
+  }
+  return null;
+}
+
+// Por que não tem categorias (plataformas que só mostram a lista de posts pra quem tá logado).
+const NO_SECTIONS = {
+  Instagram: 'O Instagram só mostra a lista de posts pra quem tá logado. Cola o link de cada post pra baixar.',
+  X: 'O X só mostra a lista de posts pra quem tá logado. Cola o link de cada post pra baixar.',
+};
+
+// Bluesky: posts com foto/vídeo do perfil, 40 por página (a API pagina por cursor).
+const bskyCursors = new Map(); // `${ator}:${página}` -> cursor da página
+async function bskyMedia(url, page) {
+  const actor = new URL(url).pathname.split('/').filter(Boolean)[1];
+  const cursor = page ? bskyCursors.get(`${actor}:${page}`) : '';
+  if (page && !cursor) throw new Error('Não tem mais posts.');
+  const q = new URLSearchParams({ actor, filter: 'posts_with_media', limit: '40', ...(cursor ? { cursor } : {}) });
+  const r = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?${q}`, { signal: AbortSignal.timeout(20_000), headers: { 'user-agent': 'Convenus/1.0' } });
+  if (!r.ok) throw new Error('O Bluesky não respondeu. Tenta de novo.');
+  const j = await r.json();
+  const items = [];
+  for (const { post } of j.feed || []) {
+    const e = post?.embed?.media || post?.embed;
+    const imgs = e?.images || [];
+    const thumb = imgs[0]?.thumb || e?.thumbnail || null;
+    if (!thumb) continue;
+    const rkey = String(post.uri || '').split('/').pop();
+    items.push({
+      kind: 'post',
+      entryUrl: `https://bsky.app/profile/${post.author?.handle || actor}/post/${rkey}`,
+      thumb,
+      label: clean(post.record?.text || '', 120) || (e?.thumbnail ? 'Vídeo' : imgs.length > 1 ? `${imgs.length} fotos` : 'Foto'),
+      badge: e?.thumbnail ? 'Vídeo' : imgs.length > 1 ? `${imgs.length} fotos` : 'Foto',
+      page,
+      pidx: items.length,
+    });
+  }
+  if (j.cursor) bskyCursors.set(`${actor}:${page + 1}`, j.cursor);
+  while (bskyCursors.size > 2000) bskyCursors.delete(bskyCursors.keys().next().value);
+  if (!items.length && !page) throw new Error('Esse perfil não tem fotos nem vídeos.');
+  return { type: 'post', platform: 'Bluesky', title: 'Fotos e vídeos', uploader: actor, playlist: true, section: true, page, total: 0, hasMore: Boolean(j.cursor) && items.length > 0, items, thumbs: [], avatar: null, duration: 0 };
 }
 
 // Playlists grandes vêm em páginas de 200: nunca carrega milhares de itens de uma vez na memória.
@@ -438,16 +532,25 @@ async function flatPlaylist(url, page = 0, { size = PLAYLIST_PAGE, mix = false }
   const end = start + size - 1;
   // Mix: o link é de um vídeo (watch?v=…&list=RD…), então pede a lista em vez do vídeo sozinho.
   const args = mix ? [...baseArgs(url).filter((a) => a !== '--no-playlist'), '--yes-playlist'] : baseArgs(url);
-  const raw = await withYt(url, () => runCapture([...args, '-J', '--flat-playlist', '--playlist-start', String(start), '--playlist-end', String(end), '--', url]));
+  // O "#videos" do TikTok é só nosso (separa a categoria do perfil): o yt-dlp recebe o link limpo.
+  const ytUrl = /(^|\.)tiktok\.com$/i.test(new URL(url).hostname) ? url.replace(/#.*$/, '') : url;
+  const raw = await withYt(url, () => runCapture([...args, '-J', '--flat-playlist', '--playlist-start', String(start), '--playlist-end', String(end), '--', ytUrl]));
   const j = JSON.parse(raw);
-  const audio = /soundcloud\.com/i.test(url);
+  const sk = sectionKind(url);
+  const audio = sk === 'audio' || (!sk && /soundcloud\.com/i.test(url));
+  const yt = isYouTube(url);
   const items = (j.entries || []).filter((e) => e && (e.url || e.id)).map((e, pidx) => {
+    // Categoria de playlists/álbuns: cada item é uma lista (abre em vez de baixar).
+    const isList = sk === 'list' || e._type === 'playlist' || /[?&]list=|\/sets\/|\/albums?\//.test(e.url || '');
     const thumb = (e.thumbnails || []).filter((t) => t.url).sort((a, b) => (b.width || 0) - (a.width || 0))[0]?.url
-      || (e.id && !audio ? `https://i.ytimg.com/vi/${e.id}/mqdefault.jpg` : null);
+      || (/^https:/.test(e.thumbnail || '') ? e.thumbnail : null)
+      || (e.id && yt && !isList ? `https://i.ytimg.com/vi/${e.id}/mqdefault.jpg` : null);
     return {
-      kind: audio ? 'audio' : 'video',
+      kind: isList ? 'list' : audio ? 'audio' : 'video',
       native: true,
       entryUrl: e.url?.startsWith('http') ? e.url : `https://www.youtube.com/watch?v=${e.id}`,
+      ...(isList && e.playlist_count ? { count: e.playlist_count } : {}),
+      ...(e.view_count ? { views: e.view_count } : {}),
       // Sem consultar cada vídeo não dá pra saber as resoluções: oferece as comuns (0 = melhor).
       heights: audio ? [] : [0, 1080, 720, 480, 360],
       hasAudio: true,
@@ -459,7 +562,7 @@ async function flatPlaylist(url, page = 0, { size = PLAYLIST_PAGE, mix = false }
       gidx: start - 1 + pidx,
     };
   });
-  if (!items.length) throw new Error(page ? 'Não tem mais itens nessa playlist.' : 'Essa playlist tá vazia ou é privada.');
+  if (!items.length) throw new Error(page ? 'Não tem mais itens aqui.' : sk ? 'Não tem nada nessa categoria.' : 'Essa playlist tá vazia ou é privada.');
   const total = j.playlist_count || 0;
   if (isYouTube(url)) ytState.lastOkAt = Date.now();
   return {
@@ -468,6 +571,7 @@ async function flatPlaylist(url, page = 0, { size = PLAYLIST_PAGE, mix = false }
     uploader: j.channel || j.uploader || '',
     thumbnail: items[0].thumb,
     playlist: true,
+    ...(sk ? { section: true } : {}),
     page,
     total: mix ? 0 : total || items.length,
     hasMore: !mix && total ? end < total : items.length === size,
@@ -531,10 +635,37 @@ const clean = (s, n) => Array.from(String(s || '').replace(/\s+/g, ' ').trim()).
 
 async function resolveInfo(url, page = 0) {
   if (page && !isPlaylistUrl(url)) throw new Error('Esse link não tem páginas.');
-  if (isChannelUrl(url)) return getChannel(url);
+  const sk = sectionKind(url);
+  if (sk === 'post') return bskyMedia(url, page);
+  if (sk) return { type: 'post', platform: platformOf(url), avatar: null, thumbs: [], duration: 0, ...(await flatPlaylist(url, page)) };
+  const secs = sectionsFor(url);
+  if (isChannelUrl(url)) return { ...(await getChannel(url)), sections: secs.sections };
 
   const extra = providers.match(url);
-  if (extra?.profile) return { type: 'profile', platform: extra.platform, ...(await extra.profile()) };
+  if (extra?.profile && !(secs && extra.platform === 'TikTok')) {
+    return { type: 'profile', platform: extra.platform, ...(await extra.profile()), sections: secs?.sections || [], sectionsNote: NO_SECTIONS[extra.platform] || '' };
+  }
+  // Perfil sem API própria (SoundCloud, Twitch, TikTok): o cabeçalho sai da primeira categoria.
+  if (secs) {
+    // Busca direto (já está dentro de uma vaga de busca) e guarda: o site pede essa categoria logo em seguida.
+    const sec0 = secs.sections[0].url;
+    const first = await flatPlaylist(sec0).then((info) => {
+      const full = { type: 'post', platform: secs.platform, avatar: null, thumbs: [], duration: 0, ...info };
+      infoCache.set(`${sec0}#0`, { at: Date.now(), info: full });
+      return full;
+    }).catch((e) => ({ error: e.message }));
+    // Nome e foto: o oEmbed público da plataforma (SoundCloud e TikTok têm), senão o que a lista trouxe.
+    const oembed = { SoundCloud: 'https://soundcloud.com/oembed?format=json&url=', TikTok: 'https://www.tiktok.com/oembed?url=' }[secs.platform];
+    const oe = oembed ? await fetch(oembed + encodeURIComponent(url.replace(/#.*$/, '')), { signal: AbortSignal.timeout(8000), headers: { 'user-agent': 'Convenus/1.0' } })
+      .then((r) => (r.ok ? r.json() : {})).catch(() => ({})) : {};
+    const handle = new URL(url).pathname.split('/').filter(Boolean)[0];
+    const avatar = /^https:\/\//.test(oe.thumbnail_url || '') && hostIn(new URL(oe.thumbnail_url).hostname, MEDIA_HOSTS) ? oe.thumbnail_url : null;
+    return {
+      type: 'profile', platform: secs.platform,
+      title: clean(oe.author_name || first.uploader || String(first.title || '').replace(/\s*\((tracks|videos|clips)\)$/i, '') || handle, 120),
+      handle, followers: 0, avatar, banner: null, sections: secs.sections,
+    };
+  }
 
   const base = { type: 'post', platform: extra?.platform || platformOf(url), avatar: null, thumbs: [], duration: 0 };
 
@@ -653,7 +784,11 @@ function publicJob(job) {
     createdAt: job.createdAt,
     finishedAt: job.finishedAt || 0,
     // Conversão de arquivo: de que formato veio e se o resultado é imagem (botão de copiar).
-    ...(job.mode === 'file' ? { from: job.opts?.src?.from || job.opts?.src?.ext || '', image: Boolean(job.file) && convert.IMAGE_OUT.has(path.extname(job.file).slice(1).toLowerCase()) } : {}),
+    ...(job.mode === 'file' ? {
+      from: job.opts?.src?.from || job.opts?.src?.ext || '',
+      image: Boolean(job.file) && convert.IMAGE_OUT.has(path.extname(job.file).slice(1).toLowerCase()),
+      ...(job.kind === 'compress' ? { target: job.opts?.compress?.mb || 0, note: job.opts?.note || '', missed: Boolean(job.opts?.missed), ext: job.file ? path.extname(job.file).slice(1).toLowerCase() : '' } : {}),
+    } : {}),
   };
 }
 
@@ -773,7 +908,7 @@ function startFileJob(job) {
   job.phase = 'Convertendo';
   persist(job);
   const h = convert.run({
-    info: job.opts.src, to: job.kind, input, dir: job.dir, base: safeName(job.title), name: job.opts.name || 'arquivo',
+    info: job.opts.src, to: job.kind, input, dir: job.dir, base: safeName(job.title), name: job.opts.name || 'arquivo', opts: job.opts,
     onProgress: (p) => {
       job.percent = p;
       persist(job, { progress: true });
@@ -782,6 +917,8 @@ function startFileJob(job) {
   job.stop = h.stop;
   h.done.then((r) => {
     if (r.file) job.file = r.file;
+    // Compressão: quanto ficou (ou o aviso de que não deu pra chegar no alvo).
+    if (r.note) job.opts = { ...job.opts, note: r.note, missed: Boolean(r.missed) };
     finishJob(job, r);
   });
 }
@@ -1287,6 +1424,11 @@ function cleanFileName(raw) {
 const uploadView = (m) => ({
   id: m.id, name: m.name, size: m.size, kind: m.src.from === 'svg' ? 'image' : m.src.kind, ext: m.src.from || m.src.ext,
   desc: convert.describe(m.src), targets: convert.targets(m.src),
+  // Pra rodinha de compressão estimar o resultado (resolução, bitrate) e o mínimo possível.
+  media: {
+    duration: m.src.duration || 0, width: m.src.width || 0, height: m.src.height || 0, hasAudio: Boolean(m.src.hasAudio),
+    animated: Boolean(m.src.animated), min: compressor.minimumBytes(m.src),
+  },
 });
 
 function uploadOf(id, device) {
@@ -1559,9 +1701,14 @@ async function handle(req, res) {
       const to = String(body.to || '');
       if (!convert.targets(meta.src).some((t) => t.to === to)) return sendJson(res, 400, { error: 'Essa conversão não existe pra esse arquivo.' });
       if (disk(DOWNLOAD_DIR).freeBytes < MIN_FREE_BYTES) return sendJson(res, 507, { error: 'O servidor está sem espaço em disco agora.' });
-      const title = meta.name.replace(/\.[^.]+$/, '') || 'arquivo';
+      const title = meta.name.replace(/\.[^.]+$/, '').replace(/ \(comprimido\)$/, '') || 'arquivo';
+      let compress;
+      if (to === 'compress') {
+        compress = compressor.cleanOpts(body.compress);
+        if (!compress.mb) return sendJson(res, 400, { error: 'Escolhe de quantos MB quer que fique.' });
+      }
       return sendJson(res, 201, publicJob(createJob({
-        mode: 'file', url: `arquivo:${meta.id}`, kind: to, quality: null, title, opts: { upload: meta.id, src: meta.src, name: meta.name }, platform: 'Arquivo', device, ip,
+        mode: 'file', url: `arquivo:${meta.id}`, kind: to, quality: null, title, opts: { upload: meta.id, src: meta.src, name: meta.name, ...(compress ? { compress } : {}) }, platform: 'Arquivo', device, ip,
       })));
     }
 
@@ -1581,7 +1728,7 @@ async function handle(req, res) {
     }
     const idx = Number.isInteger(body.item) ? body.item : 0;
     const item = info.items?.[idx];
-    if (!item || item.kind === 'image') return sendJson(res, 400, { error: 'Esse item não dá pra converter.' });
+    if (!item || ['image', 'list', 'post'].includes(item.kind)) return sendJson(res, 400, { error: 'Esse item não dá pra converter.' });
     if (kind === 'mp4' && !item.native && !item.hls) return sendJson(res, 400, { error: 'Esse vídeo já vem em MP4: é só baixar.' });
     if (kind === 'mp4' && item.kind === 'audio') return sendJson(res, 400, { error: 'Isso é só áudio.' });
 
@@ -1614,6 +1761,32 @@ async function handle(req, res) {
     const saved = rawInfo.get(url);
     if (spec.mode === 'native' && !spec.index && spec.url === url && saved && Date.now() - saved.at < INFO_TTL_MS) spec.preload = saved;
     return sendJson(res, 201, publicJob(createJob(spec)));
+  }
+
+  // "Comprimir/converter de novo": o resultado pronto vira um envio novo, sem baixar e mandar de volta.
+  const again = pathname.match(/^\/api\/jobs\/([0-9a-f]{16})\/reuse$/);
+  if (again && req.method === 'POST') {
+    const job = jobs.get(again[1]) || store.get(again[1]);
+    if (!job || job.device !== device || job.status !== 'done' || !job.file || !fs.existsSync(job.file)) return sendJson(res, 404, { error: 'Esse arquivo já expirou.' });
+    const size = fs.statSync(job.file).size;
+    if (disk(DOWNLOAD_DIR).freeBytes < MIN_FREE_BYTES + size * 3) return sendJson(res, 507, { error: 'O servidor está sem espaço agora. Tenta mais tarde.' });
+    const id = `u${crypto.randomBytes(8).toString('hex')}`;
+    const dir = path.join(DOWNLOAD_DIR, id);
+    fs.mkdirSync(dir, { mode: 0o700 });
+    const file = path.join(dir, 'in');
+    fs.copyFileSync(job.file, file);
+    const name = cleanFileName(path.basename(job.file));
+    let src;
+    try {
+      src = await convert.detect(file, name);
+    } catch {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return sendJson(res, 400, { error: 'Não consegui ler esse arquivo.' });
+    }
+    const meta = { id, device, name, size, at: Date.now(), src };
+    fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta), { mode: 0o600 });
+    uploads.set(id, meta);
+    return sendJson(res, 201, uploadView(meta));
   }
 
   const m = pathname.match(/^\/api\/jobs\/([0-9a-f]{16})(\/file)?$/);
