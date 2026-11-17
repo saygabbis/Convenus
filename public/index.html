@@ -2036,7 +2036,7 @@ const FMT = { compress: 'comprimido', jpg: 'JPG', b64: 'Base64', unpack: 'descom
 const fmtName = (x) => FMT[x] || String(x || '').toUpperCase();
 function jobLabel(j) {
   if (j.from !== undefined) return `${fmtName(j.from)} → ${fmtName(j.kind)}`;
-  const k = j.kind === 'mp4' ? (j.quality ? `MP4 ${j.quality}p` : 'MP4') : j.kind === 'mp3' ? `MP3 ${j.quality}` : j.kind === 'srt' ? 'Legenda' : 'WAV';
+  const k = j.kind === 'mp4' ? (j.quality ? `MP4 ${j.quality}p` : 'MP4') : j.kind === 'mp3' ? `MP3 ${j.quality}` : j.kind === 'srt' ? 'Legenda' : j.kind === 'gif' ? 'GIF' : 'WAV';
   return j.platform ? `${j.platform} · ${k}` : k;
 }
 
