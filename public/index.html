@@ -1756,7 +1756,23 @@ function cutWire(it) {
   tl.addEventListener('pointerdown', (e) => {
     if (!cutDur()) return;
     const h = e.target.closest('.tl-h');
-    if (!h) { if (v.readyState >= 1) v.currentTime = timeAt(e.clientX); return; }
+    if (!h) {
+      // Segurar e arrastar na barra move a agulha (o vídeo acompanha).
+      e.preventDefault();
+      tl.setPointerCapture(e.pointerId);
+      const seek = (ev) => {
+        const t = timeAt(ev.clientX);
+        if (v.readyState >= 1) v.currentTime = t;
+        $('#cutHead').style.left = `${(t / cutDur()) * 100}%`;
+        $('#cutNow').textContent = fmtT(t);
+      };
+      seek(e);
+      const stop = () => { tl.removeEventListener('pointermove', seek); tl.removeEventListener('pointerup', stop); tl.removeEventListener('pointercancel', stop); };
+      tl.addEventListener('pointermove', seek);
+      tl.addEventListener('pointerup', stop);
+      tl.addEventListener('pointercancel', stop);
+      return;
+    }
     e.preventDefault();
     h.setPointerCapture(e.pointerId);
     h.classList.add('drag');

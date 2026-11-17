@@ -407,7 +407,8 @@ async function ytdlpItems(url) {
   if (!entries.length) throw new Error('Não achei nenhum vídeo nesse link.');
   const items = entries.map((e, i) => {
     const formats = e.formats || [];
-    const heights = [...new Set(formats.filter((f) => f.vcodec && f.vcodec !== 'none' && f.height).map((f) => f.height))].sort((a, b) => b - a);
+    // Codec não informado (Twitch e outros) também conta; "portrait" é o recorte vertical da Twitch, não o vídeo.
+    const heights = [...new Set(formats.filter((f) => f.vcodec !== 'none' && f.height && !/portrait/i.test(f.format_id || '')).map((f) => f.height))].sort((a, b) => b - a);
     // Alguns sites (Facebook…) não dizem codec nem altura: é vídeo, só sem resoluções conhecidas (0 = melhor).
     const videoish = heights.length > 0 || formats.some((f) => f.vcodec !== 'none' && /^(mp4|webm|mov|mkv|flv|m3u8)$/.test(f.ext || ''));
     return {
