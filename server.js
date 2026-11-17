@@ -18,6 +18,8 @@ const { systemChecks, disk } = require('./lib/health');
 const { YtWorker } = require('./lib/ytworker');
 const convert = require('./lib/convert');
 const compressor = require('./lib/compress');
+const gallery = require('./lib/gallery');
+const clipper = require('./lib/clip');
 
 // Tudo que o servidor cria (downloads, envios, banco) fica só pro dono do processo (tem outro
 // usuário na VPS).
@@ -73,6 +75,7 @@ const MEDIA_HOSTS = [
   'redditmedia.com', 'tiktokcdn.com', 'tiktokcdn-us.com', 'tiktokcdn-eu.com', 'ibyteimg.com', 'muscdn.com', 'vimeocdn.com',
   'sndcdn.com', 'pinimg.com', 'bsky.app', 'jtvnw.net', 'dmcdn.net', 'hdslb.com', 'tumblr.com', 'bcbits.com',
   'scdn.co', 'spotifycdn.com', 'dzcdn.net', 'mzstatic.com', 'vimeo.com',
+  ...gallery.MEDIA_HOSTS,
 ];
 const MEDIA_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 const YT_HOSTS = /^(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com)$/i;
@@ -82,6 +85,7 @@ const OTHER_HOSTS = [
   'vimeo.com', 'twitch.tv', 'soundcloud.com', 'pinterest.com', 'pin.it', 'bsky.app', 'threads.net', 'threads.com',
   'dailymotion.com', 'dai.ly', 'kick.com', 'bilibili.com', 'b23.tv', 'streamable.com', 'tumblr.com', 'bandcamp.com',
   'open.spotify.com', 'deezer.com', 'music.apple.com',
+  ...gallery.HOSTS,
 ];
 const PLATFORM_NAMES = { 'x.com': 'X', 'twitter.com': 'X', 'fxtwitter.com': 'X', 'vxtwitter.com': 'X', 'fixupx.com': 'X', 'fixvx.com': 'X', 'redd.it': 'Reddit', 'fb.watch': 'Facebook', 'pin.it': 'Pinterest', 'dai.ly': 'Dailymotion', 'b23.tv': 'Bilibili', 'bsky.app': 'Bluesky', 'threads.com': 'Threads', 'tiktok.com': 'TikTok', 'soundcloud.com': 'SoundCloud', 'twitch.tv': 'Twitch', 'bilibili.com': 'Bilibili', 'open.spotify.com': 'Spotify', 'deezer.com': 'Deezer', 'music.apple.com': 'Apple Music' };
 const hostIn = (host, list) => list.some((d) => host === d || host.endsWith(`.${d}`));
@@ -134,6 +138,11 @@ function ytRelease() {
 // cópias girando tokens em paralelo.
 const COOKIES_MASTER = path.join(path.dirname(COOKIES), 'cookies.master.txt');
 const COOKIES_PREV = path.join(path.dirname(COOKIES), 'cookies.prev.txt');
+// Instagram e X (conta descartável, enviada pela página /renovar): só o gallery-dl usa, pra listar perfis.
+const SOCIAL_COOKIES = { Instagram: path.join(path.dirname(COOKIES), 'cookies-instagram.txt'), X: path.join(path.dirname(COOKIES), 'cookies-x.txt') };
+const SOCIAL_DOMAINS = { Instagram: /^(#HttpOnly_)?\.?(www\.)?instagram\.com\t/, X: /^(#HttpOnly_)?\.?(www\.)?(x|twitter)\.com\t/ };
+const SOCIAL_LOGIN = { Instagram: /\tsessionid\t/, X: /\tauth_token\t/ };
+gallery.setSocialCookies((platform) => (SOCIAL_COOKIES[platform] && fs.existsSync(SOCIAL_COOKIES[platform]) ? SOCIAL_COOKIES[platform] : ''));
 const RESTORE_COOLDOWN_MS = 10 * 60_000;
 let lastRestoreAt = 0;
 const { hasLogin } = cookieFiles;
@@ -174,6 +183,8 @@ const isYouTubeJob = (job) => job.mode === 'search' || isYouTube(job.url);
 
 
 function platformOf(url) {
+  const gal = gallery.match(url);
+  if (gal) return gal.platform;
   const host = new URL(url).hostname.replace(/^(www|m|mobile|old|vm|vt)\./, '');
   if (/^music\.youtube\.com$/i.test(new URL(url).hostname)) return 'YouTube Music';
   if (YT_HOSTS.test(new URL(url).hostname)) return 'YouTube';
@@ -269,7 +280,7 @@ function isChannelUrl(url) {
 }
 
 // Categoria de perfil (aba de vídeos, faixas…) é lista de itens, não perfil.
-const isProfileUrl = (url) => !sectionKind(url) && (isChannelUrl(url) || Boolean(sectionsFor(url)) || Boolean(providers.match(url)?.profile));
+const isProfileUrl = (url) => !sectionKind(url) && (Boolean(gallery.match(url)?.profile) || isChannelUrl(url) || Boolean(sectionsFor(url)) || Boolean(providers.match(url)?.profile));
 
 // Fora do YouTube não há tamanhos fixos de capa: oferece a maior que a plataforma tiver.
 function bestThumb(j) {
@@ -429,7 +440,7 @@ async function ytdlpItems(url) {
 
 // Playlist do YouTube/YouTube Music ou set do SoundCloud: lista leve (sem consultar vídeo por vídeo).
 function isPlaylistUrl(url) {
-  if (sectionKind(url)) return true;
+  if (sectionKind(url) || gallery.match(url)?.section) return true;
   const u = new URL(url);
   if (YT_HOSTS.test(u.hostname)) return u.pathname === '/playlist' || (u.searchParams.has('list') && !u.searchParams.has('v') && !/youtu\.be$/i.test(u.hostname));
   return /(^|\.)soundcloud\.com$/i.test(u.hostname) && /\/sets\//.test(u.pathname);
@@ -635,15 +646,30 @@ const clean = (s, n) => Array.from(String(s || '').replace(/\s+/g, ' ').trim()).
 
 async function resolveInfo(url, page = 0) {
   if (page && !isPlaylistUrl(url)) throw new Error('Esse link não tem páginas.');
+  // Sites de arte (Pixiv, DeviantArt, ArtStation, Patreon...): lib/gallery.js.
+  const gal = gallery.match(url);
+  if (gal) {
+    if (gal.section) return gal.section(page);
+    return gal.profile ? gal.profile() : gal.post();
+  }
   const sk = sectionKind(url);
   if (sk === 'post') return bskyMedia(url, page);
-  if (sk) return { type: 'post', platform: platformOf(url), avatar: null, thumbs: [], duration: 0, ...(await flatPlaylist(url, page)) };
+  if (sk) {
+    const list = await flatPlaylist(url, page).catch(async (e) => {
+      // TikTok: o yt-dlp às vezes não lista o perfil; o gallery-dl acha os vídeos.
+      const tt = /(^|\.)tiktok\.com$/i.test(new URL(url).hostname) && new URL(url).pathname.match(/^\/@([\w.-]+)/);
+      if (!tt) throw e;
+      return gallery.tiktokList(tt[1], page);
+    });
+    return { type: 'post', platform: platformOf(url), avatar: null, thumbs: [], duration: 0, ...list };
+  }
   const secs = sectionsFor(url);
   if (isChannelUrl(url)) return { ...(await getChannel(url)), sections: secs.sections };
 
   const extra = providers.match(url);
   if (extra?.profile && !(secs && extra.platform === 'TikTok')) {
-    return { type: 'profile', platform: extra.platform, ...(await extra.profile()), sections: secs?.sections || [], sectionsNote: NO_SECTIONS[extra.platform] || '' };
+    const social = gallery.socialSections(extra.platform, new URL(url).pathname.split('/').filter(Boolean)[0]);
+    return { type: 'profile', platform: extra.platform, ...(await extra.profile()), sections: secs?.sections || social || [], sectionsNote: social ? '' : NO_SECTIONS[extra.platform] || '' };
   }
   // Perfil sem API própria (SoundCloud, Twitch, TikTok): o cabeçalho sai da primeira categoria.
   if (secs) {
@@ -728,8 +754,9 @@ function jobArgs(job) {
   if (job.kind === 'srt') {
     // Só a legenda, em .srt (o after_move não roda sem download: o arquivo é achado no fim).
     args.push('--skip-download', ...subArgs, '--convert-subs', 'srt');
-  } else if (job.kind === 'mp4') {
-    const h = job.quality;
+  } else if (job.kind === 'mp4' || job.kind === 'gif') {
+    // GIF: baixa o vídeo (até 720p, que é mais do que o GIF usa) e o ffmpeg faz o resto no fim.
+    const h = job.kind === 'gif' ? 720 : job.quality;
     // Prefere H.264/AAC (toca em tudo); acima de 1080p o YouTube só tem VP9/AV1. 0 = a melhor que tiver.
     args.push(
       '-f', h ? `bv*[height<=${h}]+ba/b[height<=${h}]/bv*+ba/b` : 'bv*+ba/b',
@@ -751,6 +778,9 @@ function jobArgs(job) {
     args.push('--print', 'before_dl:@@D %(duration)s',
       '--postprocessor-args', `ExtractAudio+ffmpeg_o:${prog}`, '--postprocessor-args', `Merger+ffmpeg_o:${prog}`);
   }
+
+  // Cortar: baixa só o trecho escolhido.
+  if (job.kind !== 'srt') args.push(...clipper.ytdlpSection(job.opts?.clip));
 
   if (job.loaded) {
     args.push('--load-info-json', job.loaded.file);
@@ -783,6 +813,7 @@ function publicJob(job) {
     size: job.size || 0,
     createdAt: job.createdAt,
     finishedAt: job.finishedAt || 0,
+    ...(job.opts?.clip ? { clip: { start: job.opts.clip.start, end: job.opts.clip.end, crop: Boolean(job.opts.clip.crop) } } : {}),
     // Conversão de arquivo: de que formato veio e se o resultado é imagem (botão de copiar).
     ...(job.mode === 'file' ? {
       from: job.opts?.src?.from || job.opts?.src?.ext || '',
@@ -828,6 +859,12 @@ function releaseYt(job) {
 // Fim de UMA execução da tarefa. Idempotente: chamado de novo pra mesma execução, não faz nada.
 function finishJob(job, r) {
   if (job.finished) return;
+  // Recorte do quadro / GIF: depois do download, mais uma passada no ffmpeg (a vaga continua ocupada).
+  if (r.code === 0 && !job.posted && job.status !== 'canceled' && !shuttingDown && job.mode !== 'direct' && job.mode !== 'file'
+    && clipper.needsPost(job.opts?.clip, job.kind) && job.file && inside(job.file, job.dir) && fs.existsSync(job.file)) {
+    job.posted = true;
+    return postProcess(job);
+  }
   job.finished = true;
   running = Math.max(0, running - 1);
   job.proc = null;
@@ -877,24 +914,57 @@ function finishJob(job, r) {
 
 const runOpts = (onStdout) => ({ timeoutMs: JOB_TIMEOUT_MS, idleMs: JOB_IDLE_MS, maxStdout: 256 * 1024, onStdout });
 
+// Barra de progresso do ffmpeg (out_time_us em pipe:1) dentro da faixa [from, 100).
+const ffProgress = (job, total, from = 0) => (d) => {
+  const m = String(d).match(/out_time_us=(\d+)/g);
+  if (m && total) {
+    job.percent = Math.max(job.percent, Math.min(99, from + (100 - from) * (Number(m.pop().split('=')[1]) / 1e6 / total)));
+    persist(job, { progress: true });
+  }
+};
+
+// GIF ou recorte do quadro a partir do vídeo que o yt-dlp baixou.
+function postProcess(job) {
+  const c = job.opts.clip;
+  const input = job.file;
+  const output = path.join(job.dir, `${safeName(job.title)}${job.kind === 'gif' ? '.gif' : ' (recorte).mp4'}`);
+  job.phase = job.kind === 'gif' ? 'Fazendo o GIF' : 'Recortando o vídeo';
+  job.speed = '';
+  job.eta = '';
+  persist(job);
+  const h = proc.run('ffmpeg', clipper.postArgs(c, job.kind, input, output, 'pipe:1'), runOpts(ffProgress(job, clipper.clipLen(c, job.duration), job.percent)));
+  job.proc = h.child;
+  job.stop = h.stop;
+  h.done.then((r) => {
+    if (r.code === 0 && fs.existsSync(output)) {
+      if (input !== output) fs.rmSync(input, { force: true });
+      job.file = output;
+    }
+    finishJob(job, r);
+  });
+}
+
 // Vídeo/áudio direto (X, Instagram, TikTok…): o ffmpeg lê o arquivo original e converte o áudio.
 function startDirectJob(job) {
   const ext = job.kind;
+  const c = job.opts?.clip;
   job.file = path.join(job.dir, `${safeName(job.title)}.${ext}`);
-  job.phase = ext === 'mp4' ? 'Baixando vídeo' : `Convertendo pra ${ext.toUpperCase()}`;
-  const codec = ext === 'mp4' ? ['-c', 'copy', '-bsf:a', 'aac_adtstoasc', '-movflags', '+faststart']
-    : ['-vn', ...(ext === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', `${job.quality}k`] : ['-c:a', 'pcm_s16le'])];
+  job.phase = ext === 'gif' ? 'Fazendo o GIF' : c && ext === 'mp4' ? 'Cortando o vídeo' : ext === 'mp4' ? 'Baixando vídeo' : `Convertendo pra ${ext.toUpperCase()}`;
+  // Trecho: o ffmpeg pula direto pro início (-ss antes do -i) e para no fim.
+  const seek = c ? [...(c.start > 0 ? ['-ss', String(c.start)] : []), ...(c.end ? ['-to', String(c.end)] : [])] : [];
+  let codec;
+  if (ext === 'gif') codec = ['-filter_complex', clipper.gifFilter(c), '-loop', '0', '-an'];
+  else if (ext === 'mp4' && c) {
+    // Cortado (e talvez recortado no quadro): recodifica pra cortar no quadro exato.
+    codec = [...(c.crop ? ['-vf', clipper.cropFilter(c.crop)] : []), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart'];
+  } else if (ext === 'mp4') codec = ['-c', 'copy', '-bsf:a', 'aac_adtstoasc', '-movflags', '+faststart'];
+  else codec = ['-vn', ...(ext === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', `${job.quality}k`] : ['-c:a', 'pcm_s16le'])];
   const h = proc.run('ffmpeg', [
-    '-hide_banner', '-nostdin', '-y', '-user_agent', 'Convenus/1.0', '-i', job.url,
-    '-map_metadata', '-1', '-metadata', `title=${job.title}`, ...codec,
+    '-hide_banner', '-nostdin', '-y', '-user_agent', 'Convenus/1.0', ...seek, '-i', job.url,
+    '-map_metadata', '-1', ...(ext === 'gif' ? [] : ['-metadata', `title=${job.title}`]), ...codec,
     '-progress', 'pipe:1', '-nostats', job.file,
-  ], runOpts((d) => {
-    const m = String(d).match(/out_time_us=(\d+)/g);
-    if (m && job.duration) {
-      job.percent = Math.min(99, (Number(m.pop().split('=')[1]) / 1e6 / job.duration) * 100);
-      persist(job, { progress: true });
-    }
-  }));
+  ], runOpts(ffProgress(job, c ? clipper.clipLen(c, job.duration) : job.duration)));
   job.proc = h.child;
   job.stop = h.stop;
   h.done.then((r) => finishJob(job, r));
@@ -955,7 +1025,7 @@ async function startJob(job) {
 }
 
 // Quanto do total é download (o resto é o ffmpeg): juntar MP4 é cópia rápida; MP3/WAV recodificam.
-const DL_SHARE = { mp4: 0.9, mp3: 0.55, wav: 0.6 };
+const DL_SHARE = { mp4: 0.9, mp3: 0.55, wav: 0.6, gif: 0.6 };
 const PROGRESS_FILE = '.progresso';
 
 // Último out_time_us do arquivo de progresso do ffmpeg (lê só o fim: ele cresce a conversão toda).
@@ -1368,7 +1438,10 @@ async function serveMedia(req, res, params) {
 
   const ac = new AbortController();
   req.on('close', () => ac.abort());
-  const r = await fetch(u, { signal: ac.signal, redirect: 'manual', headers: { 'user-agent': 'Convenus/1.0' } }).catch(() => null);
+  // CDNs de arte: navegador comum, e o Referer que alguns exigem (o Pixiv recusa sem).
+  const art = hostIn(u.hostname.toLowerCase(), gallery.MEDIA_HOSTS);
+  const referer = gallery.refererFor(u.hostname.toLowerCase());
+  const r = await fetch(u, { signal: ac.signal, redirect: 'manual', headers: { 'user-agent': art ? gallery.BROWSER_UA : 'Convenus/1.0', ...(referer ? { referer } : {}) } }).catch(() => null);
   const type = (r?.headers.get('content-type') || '').split(';')[0].trim();
   const len = Number(r?.headers.get('content-length') || 0);
   if (!r || !r.ok || !/^(image|video|audio)\//.test(type) || !r.body) return sendJson(res, 502, { error: 'Não consegui baixar esse arquivo.' });
@@ -1383,6 +1456,45 @@ async function serveMedia(req, res, params) {
     'cache-control': 'no-store',
     ...SECURITY_HEADERS,
   });
+  Readable.fromWeb(r.body).on('error', () => res.destroy()).pipe(res);
+}
+
+// Prévia do cortador: o vídeo (baixa qualidade) de um item JÁ buscado, repassado com Range pra poder pular.
+// Só serve o que a busca do servidor achou: nunca um link mandado pelo navegador.
+async function servePreview(req, res, params) {
+  const url = normalizeUrl(params.get('u'));
+  const i = Math.max(0, parseInt(params.get('i'), 10) || 0);
+  const info = url && cachedInfo(url, 0);
+  const item = info?.items?.[i];
+  if (!item || item.kind === 'image') return sendJson(res, 404, { error: 'Busca o link de novo.' });
+  let src = '';
+  let headers = { 'user-agent': 'Convenus/1.0' };
+  if (item.url && !item.native) {
+    try {
+      if (hostIn(new URL(item.url).hostname.toLowerCase(), MEDIA_HOSTS)) src = item.url;
+    } catch { /* link estranho: sem prévia */ }
+  } else if (item.native) {
+    const saved = rawInfo.get(item.entryUrl || url);
+    // Busca que passou pelo WARP: o link só vale pro IP do WARP, e o fetch não fala SOCKS.
+    if (saved && !saved.proxied) {
+      const pf = clipper.previewFormat(JSON.parse(saved.raw).formats, item.kind === 'audio');
+      if (pf) {
+        src = pf.f.url;
+        headers = { ...(pf.f.http_headers || {}) };
+      }
+    }
+  }
+  if (!src) return sendJson(res, 404, { error: 'Esse vídeo não tem prévia, mas dá pra cortar pelos tempos.' });
+
+  const ac = new AbortController();
+  req.on('close', () => ac.abort());
+  const range = /^bytes=\d*-\d*$/.test(req.headers.range || '') ? req.headers.range : 'bytes=0-';
+  const r = await fetch(src, { signal: ac.signal, headers: { ...headers, range } }).catch(() => null);
+  const type = (r?.headers.get('content-type') || '').split(';')[0].trim();
+  if (!r || !(r.status === 200 || r.status === 206) || !r.body || !/^(video|audio)\/|octet-stream/.test(type)) return sendJson(res, 502, { error: 'Não consegui carregar a prévia.' });
+  const out = { 'content-type': /octet-stream/.test(type) ? (item.kind === 'audio' ? 'audio/mp4' : 'video/mp4') : type, 'accept-ranges': 'bytes', 'cache-control': 'no-store', ...SECURITY_HEADERS };
+  for (const h of ['content-length', 'content-range']) if (r.headers.get(h)) out[h] = r.headers.get(h);
+  res.writeHead(r.status, out);
   Readable.fromWeb(r.body).on('error', () => res.destroy()).pipe(res);
 }
 
@@ -1512,6 +1624,24 @@ async function renewCookies(req, res) {
     return sendJson(res, 400, { error: 'Arquivo inválido ou grande demais.' });
   }
 
+  // Instagram/X no mesmo arquivo (ou sozinhos): guarda as linhas de cada um à parte.
+  const lines = String(body.content || '').split(/\r?\n/);
+  const saved = [];
+  for (const [name, re] of Object.entries(SOCIAL_DOMAINS)) {
+    const mine = [...new Set(lines.filter((l) => re.test(l)))];
+    if (!mine.length) continue;
+    if (!mine.some((l) => SOCIAL_LOGIN[name].test(l))) return sendJson(res, 200, { ok: false, message: `Os cookies do ${name} não têm o login. Entra na conta descartável e exporta de novo.` });
+    cookieFiles.writePrivate(SOCIAL_COOKIES[name], `# Netscape HTTP Cookie File\n${mine.join('\n')}\n`);
+    saved.push(name);
+  }
+  if (saved.length) {
+    infoCache.clear();
+    console.log(`[cookies] ${saved.join(' e ')} atualizados pela página /renovar`);
+  }
+  if (!lines.some((l) => /^(#HttpOnly_)?\.?youtube\.com\t/.test(l))) {
+    if (saved.length) return sendJson(res, 200, { ok: true, message: `Login do ${saved.join(' e do ')} salvo! Os perfis já mostram as categorias.` });
+  }
+
   // Segura a vez no YouTube: nenhum outro yt-dlp usa cookies enquanto troca.
   await ytAcquire();
   try {
@@ -1599,6 +1729,7 @@ async function handle(req, res) {
     if (pathname === '/api/jobs' && req.method === 'POST' && tooMany(req, res, 'jobs', 240, 60_000)) return undefined;
     if (pathname === '/api/upload' && req.method === 'POST' && tooMany(req, res, 'upload', 60, 10 * 60_000)) return undefined;
     if ((pathname === '/api/media' || pathname === '/api/image') && tooMany(req, res, 'media', 300, 60_000)) return undefined;
+    if (pathname === '/api/preview' && tooMany(req, res, 'preview', 900, 60_000)) return undefined;
   }
 
   if (pathname === '/health') {
@@ -1641,6 +1772,7 @@ async function handle(req, res) {
   if (pathname === '/api/cookies' && req.method === 'POST') return renewCookies(req, res);
 
   if ((pathname === '/api/media' || pathname === '/api/image') && req.method === 'GET') return serveMedia(req, res, searchParams);
+  if (pathname === '/api/preview' && req.method === 'GET') return servePreview(req, res, searchParams);
 
   if (pathname === '/api/info' && req.method === 'POST') {
     const body = await readJson(req).catch(() => ({}));
@@ -1715,7 +1847,7 @@ async function handle(req, res) {
     const url = normalizeUrl(body.url);
     if (!url) return sendJson(res, 400, { error: 'Esse site ainda não é suportado.' });
     if (isProfileUrl(url)) return sendJson(res, 400, { error: 'Link de perfil não tem vídeo pra converter.' });
-    const kind = ['mp4', 'mp3', 'wav', 'srt'].includes(body.kind) ? body.kind : null;
+    const kind = ['mp4', 'mp3', 'wav', 'srt', 'gif'].includes(body.kind) ? body.kind : null;
     if (!kind) return sendJson(res, 400, { error: 'Formato inválido.' });
     if (disk(DOWNLOAD_DIR).freeBytes < MIN_FREE_BYTES) return sendJson(res, 507, { error: 'O servidor está sem espaço em disco agora.' });
     // O item vem da busca que o servidor fez: nunca baixa um link arbitrário mandado pelo navegador.
@@ -1729,8 +1861,17 @@ async function handle(req, res) {
     const idx = Number.isInteger(body.item) ? body.item : 0;
     const item = info.items?.[idx];
     if (!item || ['image', 'list', 'post'].includes(item.kind)) return sendJson(res, 400, { error: 'Esse item não dá pra converter.' });
-    if (kind === 'mp4' && !item.native && !item.hls) return sendJson(res, 400, { error: 'Esse vídeo já vem em MP4: é só baixar.' });
-    if (kind === 'mp4' && item.kind === 'audio') return sendJson(res, 400, { error: 'Isso é só áudio.' });
+    if ((kind === 'mp4' || kind === 'gif') && item.kind === 'audio') return sendJson(res, 400, { error: 'Isso é só áudio.' });
+    if (kind === 'gif' && item.search) return sendJson(res, 400, { error: 'Música não vira GIF.' });
+    // Cortar trecho / recortar o quadro / GIF (lib/clip.js).
+    let clip = null;
+    if (kind !== 'srt' && (body.clip || kind === 'gif')) {
+      const c = clipper.cleanClip(body.clip, { duration: item.duration || info.duration || 0, kind });
+      if (c.error) return sendJson(res, 400, { error: c.error });
+      clip = c.clip;
+      if (clip?.crop && (kind === 'mp3' || kind === 'wav')) clip.crop = null;
+    }
+    if (kind === 'mp4' && !clip && !item.native && !item.hls) return sendJson(res, 400, { error: 'Esse vídeo já vem em MP4: é só baixar.' });
 
     // Legendas: só idiomas que a busca achou, e só em itens que o yt-dlp baixa.
     let subs = null;
@@ -1750,7 +1891,7 @@ async function handle(req, res) {
       quality = MP3_BITRATES.includes(String(body.quality)) ? String(body.quality) : '320';
     }
     const title = String(body.title || info.title || 'arquivo');
-    const common = { kind, quality, title, opts: subs ? { subs } : {}, platform: info.platform || '', device, ip };
+    const common = { kind, quality, title, duration: item.duration || info.duration || 0, opts: { ...(subs ? { subs } : {}), ...(clip ? { clip } : {}) }, platform: info.platform || '', device, ip };
     const spec = item.search
       // Música (Spotify, Deezer, Apple Music): baixa a mesma faixa da aba de músicas do YouTube Music.
       ? { ...common, mode: 'search', url: `https://music.youtube.com/search?q=${encodeURIComponent(item.search)}#songs` }

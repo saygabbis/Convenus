@@ -240,6 +240,58 @@
   .chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
   @media (min-width: 640px) { .chips { display: flex; flex-wrap: wrap; gap: 12px; } .chips .k { padding: 11px 18px; } }
   .note { font-size: 12px; margin: -12px 0 20px; }
+  /* cortar trecho / recortar quadro */
+  .cut { margin: -6px 0 22px; }
+  .cut-tog { width: 100%; justify-content: flex-start; padding: 13px 16px; border-radius: 16px; }
+  .cut-tog > span:nth-child(2) { white-space: nowrap; }
+  .cut-tog .cut-sum { margin-left: auto; min-width: 0; flex: 0 1 auto; font-size: 12px; color: var(--ac-text); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cut-tog .chev { display: flex; transition: transform .3s cubic-bezier(.22,1,.36,1); }
+  .cut-tog[aria-expanded="true"] { background: var(--ac-soft); color: var(--ac-text); transform: none; }
+  .cut-tog[aria-expanded="true"] .chev { transform: rotate(180deg); }
+  .cut-body { padding-top: 16px; animation: pop .35s cubic-bezier(.22,1,.36,1) both; }
+  .stage { position: relative; border-radius: 18px; overflow: hidden; background: #0d0f13; aspect-ratio: 16 / 9; max-height: 60vh; margin: 0 auto; user-select: none; -webkit-user-select: none; }
+  .stage video { width: 100%; height: 100%; display: block; object-fit: contain; }
+  .stage .playbtn { position: absolute; left: 12px; bottom: 12px; width: 46px; height: 46px; border-radius: 50%; border: 0; background: rgb(0 0 0 / .55); color: #fff; display: grid; place-items: center; cursor: pointer; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); transition: transform .3s cubic-bezier(.34,1.56,.64,1); z-index: 2; }
+  .stage .playbtn:hover { transform: scale(1.08); }
+  .stage .tnow { position: absolute; right: 12px; bottom: 12px; padding: 5px 9px; border-radius: 9px; background: rgb(0 0 0 / .55); color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; pointer-events: none; z-index: 2; }
+  .stage-msg { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); max-width: calc(100% - 24px); background: rgb(0 0 0 / .62); color: #fff; font-size: 12px; padding: 7px 11px; border-radius: 10px; text-align: center; z-index: 2; }
+  .stage.audio { aspect-ratio: auto; height: 150px; }
+  .stage.audio video { object-fit: cover; opacity: .55; }
+  .crop { position: absolute; border: 2px solid #fff; box-shadow: 0 0 0 9999px rgb(0 0 0 / .55); cursor: move; touch-action: none; z-index: 1; }
+  .crop::before, .crop::after { content: ''; position: absolute; pointer-events: none; border: 0 dashed rgb(255 255 255 / .4); }
+  .crop::before { top: 0; bottom: 0; left: 33.33%; right: 33.33%; border-left-width: 1px; border-right-width: 1px; }
+  .crop::after { left: 0; right: 0; top: 33.33%; bottom: 33.33%; border-top-width: 1px; border-bottom-width: 1px; }
+  .crop i { position: absolute; width: 22px; height: 22px; border: 4px solid #fff; border-radius: 3px; }
+  .crop i::after { content: ''; position: absolute; inset: -12px; }
+  .crop i[data-h="nw"] { left: -5px; top: -5px; border-right: 0; border-bottom: 0; cursor: nwse-resize; }
+  .crop i[data-h="ne"] { right: -5px; top: -5px; border-left: 0; border-bottom: 0; cursor: nesw-resize; }
+  .crop i[data-h="sw"] { left: -5px; bottom: -5px; border-right: 0; border-top: 0; cursor: nesw-resize; }
+  .crop i[data-h="se"] { right: -5px; bottom: -5px; border-left: 0; border-top: 0; cursor: nwse-resize; }
+  .crop .csize { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); font-size: 11px; color: #fff; background: rgb(0 0 0 / .55); padding: 3px 7px; border-radius: 7px; white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums; }
+  .tl { position: relative; height: 48px; margin: 16px 8px 4px; border-radius: 14px; background: var(--fill); touch-action: none; cursor: pointer;
+    background-image: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), color-mix(in srgb, var(--mut) 22%, transparent) calc(10% - 1px) 10%); }
+  .tl-sel { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--ac) 22%, transparent); border-top: 2px solid var(--ac); border-bottom: 2px solid var(--ac); pointer-events: none; }
+  .tl-h { position: absolute; top: -4px; bottom: -4px; width: 18px; margin-left: -9px; padding: 0; border: 0; border-radius: 9px; background: var(--ac); cursor: ew-resize; touch-action: none; box-shadow: var(--shadow); transition: transform .2s; }
+  .tl-h:hover, .tl-h.drag { transform: scaleX(1.15); }
+  .tl-h::after { content: ''; position: absolute; left: 50%; top: 50%; width: 3px; height: 16px; margin: -8px 0 0 -1.5px; border-radius: 2px; background: rgb(255 255 255 / .9); }
+  .tl-h::before { content: ''; position: absolute; inset: -6px -10px; }
+  .tl-h:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .tl-head { position: absolute; top: -7px; bottom: -7px; width: 3px; margin-left: -1.5px; background: var(--ink); border-radius: 2px; pointer-events: none; }
+  .tl-scale { display: flex; justify-content: space-between; font-size: 11px; margin: 4px 8px 0; font-variant-numeric: tabular-nums; }
+  .cut-times { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: end; margin-top: 14px; }
+  .tbox { display: flex; flex-direction: column; gap: 6px; font-size: 12px; min-width: 0; }
+  .tbox .row { display: flex; gap: 8px; }
+  .tbox input { flex: 1; min-width: 0; width: 100%; font: inherit; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--fill); border: 0; border-radius: 12px; padding: 10px 12px; outline: none; }
+  .tbox .k { padding: 0 12px; font-size: 13px; flex: none; }
+  .cut-len { text-align: center; font-weight: 600; font-size: 13px; padding-bottom: 12px; color: var(--ac-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cut-len.warn { color: var(--err); }
+  .cut-opts { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
+  .cut-opts .k { padding: 9px 13px; font-size: 13px; }
+  .cut-opts .sp { flex: 1; }
+  .cut-asp { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; animation: pop .3s cubic-bezier(.22,1,.36,1) both; }
+  .cut-asp .k { padding: 7px 12px; font-size: 12px; border-radius: 11px; }
+  @media (max-width: 520px) { .cut-times { grid-template-columns: 1fr 1fr; } .cut-len { grid-column: 1 / -1; order: 3; padding: 0; } }
+  .gifopts .label { margin-top: 2px; }
   .thumbs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   @media (min-width: 640px) { .thumbs { grid-template-columns: repeat(4, minmax(0, 1fr)); } .thumbs .k { flex-direction: column; gap: 0; } }
   .sec { margin-top: 28px; }
@@ -523,6 +575,7 @@
         <div class="sec" id="convert" hidden>
           <p class="label mut" id="convertLabel" hidden></p>
           <div class="tabs" role="tablist" aria-label="Formato"></div>
+          <div id="cutWrap"></div>
           <p class="label mut" id="qLabel">Qualidade</p>
           <div class="chips" id="chips"></div>
           <p class="note mut" id="note" hidden></p>
@@ -641,6 +694,15 @@ const PLATFORMS = [
   { name: 'Streamable', color: '#0f90fa', re: /(^|\.)streamable\.com$/ },
   { name: 'Vimeo', color: '#1ab7ea', re: /(^|\.)vimeo\.com$/ },
   { name: 'Tumblr', color: '#5b7aa0', re: /(^|\.)tumblr\.com$/ },
+  { name: 'Pixiv', color: '#0096fa', re: /(^|\.)pixiv\.net$/ },
+  { name: 'DeviantArt', color: '#05cc47', re: /(^|\.)deviantart\.com$/ },
+  { name: 'ArtStation', color: '#13aff0', re: /(^|\.)artstation\.com$/ },
+  { name: 'Patreon', color: '#ff424d', re: /(^|\.)patreon\.com$/ },
+  { name: 'Danbooru', color: '#a0a4ff', re: /(^|\.)danbooru\.donmai\.us$/, hide: true },
+  { name: 'e621', color: '#1f3c67', re: /(^|\.)e(621|926)\.net$/, hide: true },
+  { name: 'Imgur', color: '#1bb76e', re: /(^|\.)imgur\.com$/, hide: true },
+  { name: 'Flickr', color: '#ff0084', re: /(^|\.)flickr\.com$/, hide: true },
+  { name: 'Behance', color: '#1769ff', re: /(^|\.)behance\.net$/, hide: true },
 ];
 const platformByName = (n) => PLATFORMS.find((p) => p.name === n || p.label === n);
 function platformOfUrl(u) {
@@ -669,6 +731,10 @@ const ICONS = {
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   down: '<path d="M6 9l6 6 6-6"/>',
   play: '<path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/>',
+  pause: '<path d="M7 5h3v14H7zM14 5h3v14h-3z" fill="currentColor" stroke="none"/>',
+  cut: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.1 15.9M14.5 14.5L20 20M8.1 8.1L12 12"/>',
+  crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
+  gif: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 10H8.5a1.5 1.5 0 0 0 0 3v0a1.5 1.5 0 0 0 1.5-1.5M12.5 10v4M15 14v-4h2.5M15 12h2"/>',
   music: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
   video: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9v6l5-3z"/>',
   wave: '<path d="M3 12h1M7 8v8M11 4v16M15 7v10M19 10v4"/>',
@@ -707,7 +773,11 @@ function fmtSize(b) {
 }
 function fmtCount(n) { return new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(n); }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-function mediaLink(url, name) { return `/api/media?u=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`; }
+function mediaLink(url, name) {
+  // Imagem que já passa pelo servidor (CDN que exige Referer, ex.: Pixiv): só troca o nome do arquivo.
+  if (String(url).startsWith('/api/')) { const u = new URL(url, location.origin); u.searchParams.set('name', name); return u.pathname + u.search; }
+  return `/api/media?u=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`;
+}
 function fileBase(s) { return String(s || 'arquivo').replace(/\s+/g, ' ').trim().slice(0, 80); }
 
 async function api(path, opts = {}) {
@@ -721,7 +791,7 @@ async function api(path, opts = {}) {
 // Item da Mix: o servidor procura na lista da Mix (mix: true), não no vídeo.
 const jobRef = (it, n) => ({ ...(it.page != null ? { page: it.page, item: it.pidx } : { item: n }), ...(it.mix ? { mix: true } : {}) });
 
-$('#sites').innerHTML = PLATFORMS.map((p) => `<span class="pill" data-name="${p.name}" style="--c:${p.color}"><i></i>${p.label || p.name}</span>`).join('')
+$('#sites').innerHTML = PLATFORMS.filter((p) => !p.hide).map((p) => `<span class="pill" data-name="${p.name}" style="--c:${p.color}"><i></i>${p.label || p.name}</span>`).join('')
   + '<span class="pill">e mais</span>';
 
 // ---------- tema ----------
@@ -781,6 +851,7 @@ async function lookup(url) {
     if (my !== seq) return;
     state.info = info;
     state.picked = new Set();
+    state.cut.key = ''; // busca nova: cortador do zero (e a prévia tenta de novo)
     state.mix = info.mix ? { open: false, items: null, page: -1, hasMore: true, picked: new Set(), loading: false, err: '' } : null;
     setPlatform(platformByName(info.platform) || p);
     if (info.type === 'profile') renderProfile();
@@ -1090,23 +1161,42 @@ $('#mixSec').addEventListener('keydown', (e) => {
 });
 
 function renderConvert(it, base, multi) {
-  const avail = { mp4: it.kind === 'video', mp3: it.hasAudio, wav: it.hasAudio };
+  const avail = { mp4: it.kind === 'video', mp3: it.hasAudio, wav: it.hasAudio, gif: it.kind === 'video' && !it.search };
   if (!avail[state.kind]) state.kind = Object.keys(avail).find((k) => avail[k]) || 'mp4';
   $('#convertLabel').hidden = !multi;
   $('#convertLabel').textContent = it.label
     ? `${state.sel + 1}. ${it.label}`
     : `Item ${state.sel + 1} de ${state.info.items.length}: ${KIND_NAME[it.kind].toLowerCase()}`;
 
-  const tabs = [['mp4', 'MP4', 'video'], ['mp3', 'MP3', 'music'], ['wav', 'WAV', 'wave']].filter(([k]) => avail[k]);
+  const tabs = [['mp4', 'MP4', 'video'], ['mp3', 'MP3', 'music'], ['wav', 'WAV', 'wave'], ['gif', 'GIF', 'gif']].filter(([k]) => avail[k]);
   const tabEl = document.querySelector('.tabs');
   tabEl.style.gridTemplateColumns = `repeat(${tabs.length}, minmax(0, 1fr))`;
   tabEl.innerHTML = tabs.map(([k, label, ico]) =>
     `<button class="k" type="button" role="tab" data-kind="${k}" aria-selected="${k === state.kind}">${svg(ico, 22, 2)}${label}</button>`).join('');
+  cutSync(it);
+  const clipped = cutActive();
+  // "· trecho de 15 s" / "· recortado" no botão quando o cortador está valendo.
+  const suffix = clipped ? ` · ${cutLen() && (state.cut.start > 0.05 || state.cut.end) ? `trecho de ${String(Math.round(cutLen() * 10) / 10).replace('.', ',')} s` : 'recortado'}` : '';
 
   const chips = $('#chips');
   const note = $('#note');
   note.hidden = true;
   let go = '';
+  if (state.kind === 'gif') {
+    const g = state.cut.gif;
+    $('#qLabel').textContent = 'Largura';
+    chips.innerHTML = [320, 480, 640].map((w) =>
+      `<button class="k" type="button" data-gw="${w}" aria-pressed="${w === g.width}">${w}px${w === 480 ? ' <small>padrão</small>' : ''}</button>`).join('');
+    const len = cutLen();
+    const tooLong = len > GIF_MAX;
+    note.textContent = tooLong ? `GIF só até ${GIF_MAX} s: diminui o trecho no Cortar.` : 'GIF é pesado: quanto menor o trecho, a largura e os quadros, menor o arquivo.';
+    note.hidden = false;
+    go = `<div class="gifopts"><p class="label mut">Quadros por segundo</p><div class="chips">${[10, 15, 24].map((f) =>
+      `<button class="k" type="button" data-fps="${f}" aria-pressed="${f === g.fps}">${f} fps${f === 15 ? ' <small>padrão</small>' : ''}</button>`).join('')}</div></div>`
+      + `<button class="cta" type="button" id="go"${tooLong || !len ? ' disabled' : ''}>${svg('dl', 20, 2.4)}Fazer GIF${len ? ` de ${String(Math.round(len * 10) / 10).replace('.', ',')} s` : ''}</button>`;
+    $('#goWrap').innerHTML = go;
+    return;
+  }
   if (state.kind === 'mp4' && it.native) {
     $('#qLabel').textContent = 'Resolução';
     chips.innerHTML = it.heights.map((h) =>
@@ -1115,7 +1205,7 @@ function renderConvert(it, base, multi) {
       note.textContent = 'Acima de 1080p o vídeo vem em VP9/AV1: toca no celular e no VLC, mas editores antigos podem não abrir.';
       note.hidden = false;
     }
-    go = `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}Converter pra MP4${state.quality.mp4 ? ` ${state.quality.mp4}p` : ''}</button>`;
+    go = `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}Converter pra MP4${state.quality.mp4 ? ` ${state.quality.mp4}p` : ''}${suffix}</button>`;
   } else if (state.kind === 'mp4') {
     // Vídeo direto: já é MP4, só escolhe a versão e baixa.
     const vs = it.variants?.length ? it.variants : [{ url: it.url }];
@@ -1124,14 +1214,14 @@ function renderConvert(it, base, multi) {
     chips.innerHTML = vs.map((v, n) =>
       `<button class="k" type="button" data-v="${n}" aria-pressed="${n === state.variant}">${esc(v.label || (v.height ? `${v.height}p` : 'Original'))}${n === 0 && vs.length > 1 ? ' <small>melhor</small>' : ''}</button>`).join('');
     if (state.info.platform === 'TikTok') { note.textContent = 'Sem marca d\'água.'; note.hidden = false; }
-    go = it.hls
-      ? `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}Baixar MP4</button>`
+    go = it.hls || clipped
+      ? `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}${clipped ? `Cortar e baixar MP4${suffix}` : 'Baixar MP4'}</button>`
       : `<a class="cta" href="${esc(mediaLink(vs[state.variant].url, base))}" download>${svg('dl', 20, 2.4)}Baixar MP4</a>`;
   } else if (state.kind === 'mp3') {
     $('#qLabel').textContent = 'Qualidade';
     chips.innerHTML = ['320', '256', '192', '128'].map((q) =>
       `<button class="k" type="button" data-q="${q}" aria-pressed="${q === state.quality.mp3}">${q} kbps</button>`).join('');
-    go = `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}Converter pra MP3</button>`;
+    go = `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}Converter pra MP3${suffix}</button>`;
     if (it.kind === 'audio' && !it.native && it.url) {
       go += `<a class="k" style="width:100%;margin-top:12px" href="${esc(mediaLink(it.url, base))}" download>Baixar o áudio original</a>`;
     }
@@ -1140,7 +1230,7 @@ function renderConvert(it, base, multi) {
     chips.innerHTML = '<button class="k" type="button" aria-pressed="true">Sem perda <small>PCM 16-bit</small></button>';
     note.textContent = 'WAV é pesado: uns 10 MB por minuto.';
     note.hidden = false;
-    go = `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}Converter pra WAV</button>`;
+    go = `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}Converter pra WAV${suffix}</button>`;
   }
   $('#goWrap').innerHTML = go + subsBlock(it);
 }
@@ -1206,17 +1296,24 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-kind]');
   if (!b) return;
   state.kind = b.dataset.kind;
+  if (state.kind === 'gif') cutForGif();
   refreshConvert();
 });
 $('#chips').addEventListener('click', (e) => {
   const v = e.target.closest('[data-v]');
   if (v) { state.variant = Number(v.dataset.v); return renderPost(); }
+  const gw = e.target.closest('[data-gw]');
+  if (gw) { state.cut.gif.width = Number(gw.dataset.gw); return refreshConvert(); }
   const b = e.target.closest('[data-q]');
   if (!b) return;
   state.quality[state.kind] = state.kind === 'mp4' ? Number(b.dataset.q) : b.dataset.q;
   refreshConvert();
 });
 
+$('#goWrap').addEventListener('click', (e) => {
+  const f = e.target.closest('[data-fps]');
+  if (f) { state.cut.gif.fps = Number(f.dataset.fps); refreshConvert(); }
+});
 $('#goWrap').addEventListener('change', (e) => {
   if (e.target.id === 'subEmbed') state.subEmbed = e.target.checked;
 });
@@ -1450,6 +1547,308 @@ $('#sBody').addEventListener('keydown', (e) => {
 });
 addEventListener('resize', () => { if (!$('#pSecs').hidden) moveSegKnob($('#sTabs')); });
 
+// ---------- cortar trecho / recortar o quadro / GIF ----------
+// Um painel por item (state.url + item): o <video> só é criado de novo quando troca o item.
+const CUT_ASPECTS = [['free', 'Livre'], ['1', '1:1'], ['0.5625', '9:16'], ['1.7778', '16:9'], ['0.8', '4:5']];
+const GIF_MAX = 60;
+function cutReset(key = '') {
+  state.cut = { key, open: false, start: 0, end: 0, dur: 0, vw: 0, vh: 0, cropOn: false, crop: { x: 0, y: 0, w: 1, h: 1 }, aspect: 'free', gif: state.cut?.gif || { fps: 15, width: 480 } };
+}
+cutReset();
+const cutDur = () => state.cut.dur || cur()?.duration || state.info?.duration || 0;
+const cutEnd = () => state.cut.end || cutDur();
+const cutLen = () => Math.max(0, cutEnd() - state.cut.start);
+const cropped = () => state.cut.cropOn && (state.cut.crop.w < 0.995 || state.cut.crop.h < 0.995);
+function cutActive() {
+  const c = state.cut, d = cutDur();
+  if (!c.open && state.kind !== 'gif') return false;
+  return c.start > 0.05 || (c.end > 0 && (!d || c.end < d - 0.05)) || cropped();
+}
+function cutPayload(kind) {
+  if (kind === 'srt' || !(cutActive() || kind === 'gif')) return undefined;
+  const c = state.cut;
+  return {
+    start: +c.start.toFixed(2), end: +(cutEnd() || 0).toFixed(2),
+    ...(cropped() && kind !== 'mp3' && kind !== 'wav' ? { crop: { ...c.crop } } : {}),
+    ...(kind === 'gif' ? { gif: { ...c.gif } } : {}),
+  };
+}
+function fmtT(s) {
+  if (!(s >= 0)) s = 0;
+  const m = Math.floor(s / 60), r = s - m * 60;
+  const h = Math.floor(m / 60);
+  const ss = r.toFixed(1).padStart(4, '0');
+  return h ? `${h}:${String(m % 60).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+// "1:23.4", "83.4", "1:02:03" ou "83,4"
+function parseT(t) {
+  const p = String(t || '').trim().replace(',', '.').split(':').map(Number);
+  if (!p.length || p.some((x) => !Number.isFinite(x) || x < 0)) return NaN;
+  return p.reduce((a, x) => a * 60 + x, 0);
+}
+function cutSummary() {
+  if (!cutActive()) return '';
+  const c = state.cut, d = cutDur();
+  const trimmed = c.start > 0.05 || (c.end > 0 && (!d || c.end < d - 0.05));
+  const short = (t) => fmtT(t).replace(/\.0$/, '');
+  return [trimmed ? `${short(c.start)} → ${short(cutEnd())}` : '', trimmed && cutLen() ? `${String(Math.round(cutLen() * 10) / 10).replace('.', ',')} s` : '', cropped() ? 'recorte' : ''].filter(Boolean).join(' · ');
+}
+
+// Abre o cortador já com um trecho que faz sentido pro GIF (o vídeo todo se couber, senão 10 s).
+function cutForGif() {
+  const c = state.cut, d = cutDur();
+  c.open = true;
+  if (!c.end && (!d || d > GIF_MAX)) c.end = Math.min(d || 10, c.start + 10);
+  else if (cutLen() > GIF_MAX) c.end = c.start + GIF_MAX;
+}
+
+function cutSync(it) {
+  const wrap = $('#cutWrap');
+  // Só pra um vídeo/áudio aberto sozinho (não em lista) que o servidor baixa ou converte.
+  const can = (it.kind === 'video' || it.kind === 'audio') && !it.search && it.page == null;
+  if (!can) { wrap.innerHTML = ''; state.cut.key = ''; return; }
+  const key = `${state.url}#${state.sel}`;
+  if (state.cut.key !== key || !$('#cutTog')) {
+    cutReset(key);
+    if (state.kind === 'gif') cutForGif();
+    wrap.innerHTML = cutHtml(it);
+    cutWire(it);
+  }
+  if (state.kind === 'gif' && !state.cut.open) { cutForGif(); cutLoadPreview(); }
+  if (state.cut.open) cutLoadPreview();
+  cutPaint();
+}
+
+function cutHtml(it) {
+  const audio = it.kind === 'audio';
+  const poster = it.thumb || state.info.thumbnail;
+  return `<div class="cut">
+    <button class="k cut-tog" type="button" id="cutTog" aria-expanded="false" aria-controls="cutBody">${svg('cut', 18, 2)}<span>${audio ? 'Cortar trecho' : 'Cortar e recortar'}</span><span class="cut-sum" id="cutSum"></span><span class="chev">${svg('down', 16, 2.4)}</span></button>
+    <div class="cut-body" id="cutBody" hidden>
+      <div class="stage${audio ? ' audio' : ''}" id="cutStage">
+        <video id="cutVid" playsinline preload="metadata"${poster ? ` poster="${esc(poster)}"` : ''}></video>
+        <div class="crop" id="cutCrop" hidden><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i><span class="csize" id="cutCsize"></span></div>
+        <div class="stage-msg" id="cutMsg" hidden></div>
+        <button class="playbtn" type="button" id="cutPlay" aria-label="Tocar o trecho">${svg('play', 18)}</button>
+        <span class="tnow" id="cutNow">0:00.0</span>
+      </div>
+      <div class="tl" id="cutTl" role="group" aria-label="Linha do tempo">
+        <div class="tl-sel" id="cutSel"></div>
+        <div class="tl-head" id="cutHead"></div>
+        <button class="tl-h" type="button" data-edge="start" id="cutHin" aria-label="Início do trecho (setas pra ajustar)"></button>
+        <button class="tl-h" type="button" data-edge="end" id="cutHout" aria-label="Fim do trecho (setas pra ajustar)"></button>
+      </div>
+      <div class="tl-scale mut"><span>0:00</span><span id="cutTotal"></span></div>
+      <div class="cut-times">
+        <label class="tbox mut">Início<span class="row"><input id="cutIn" inputmode="decimal" autocomplete="off" spellcheck="false"><button class="k" type="button" id="cutSetIn" title="Usar o ponto onde o vídeo está">Aqui</button></span></label>
+        <span class="cut-len" id="cutLen"></span>
+        <label class="tbox mut">Fim<span class="row"><input id="cutOut" inputmode="decimal" autocomplete="off" spellcheck="false"><button class="k" type="button" id="cutSetOut" title="Usar o ponto onde o vídeo está">Aqui</button></span></label>
+      </div>
+      <div class="cut-opts">
+        ${audio ? '' : `<button class="k" type="button" id="cutCropOn" aria-pressed="false">${svg('crop', 16, 2)}Recortar o quadro</button>`}
+        <span class="sp"></span>
+        <button class="k" type="button" id="cutClear">${svg('again', 15, 2)}Limpar</button>
+        ${audio ? '' : `<div class="cut-asp" id="cutAsp" hidden>${CUT_ASPECTS.map(([v, l]) => `<button class="k" type="button" data-asp="${v}" aria-pressed="${v === 'free'}">${l}</button>`).join('')}</div>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+function cutPaint() {
+  const c = state.cut;
+  if (!$('#cutTog')) return;
+  const d = cutDur();
+  $('#cutTog').setAttribute('aria-expanded', c.open);
+  $('#cutBody').hidden = !c.open;
+  $('#cutSum').textContent = cutSummary();
+  const pct = (t) => (d ? Math.min(100, Math.max(0, (t / d) * 100)) : 0);
+  const s = pct(c.start), e = d ? pct(cutEnd()) : 100;
+  $('#cutSel').style.left = `${s}%`;
+  $('#cutSel').style.width = `${Math.max(0, e - s)}%`;
+  $('#cutHin').style.left = `${s}%`;
+  $('#cutHout').style.left = `${e}%`;
+  $('#cutTotal').textContent = d ? fmtT(d).replace(/\.\d$/, '') : '';
+  if (document.activeElement !== $('#cutIn')) $('#cutIn').value = fmtT(c.start);
+  if (document.activeElement !== $('#cutOut')) $('#cutOut').value = cutEnd() ? fmtT(cutEnd()) : '';
+  const len = cutLen();
+  const tooLong = state.kind === 'gif' && len > GIF_MAX;
+  $('#cutLen').textContent = len ? `${String(Math.round(len * 10) / 10).replace('.', ',')} s${tooLong ? ` (máx. ${GIF_MAX})` : ''}` : '';
+  $('#cutLen').classList.toggle('warn', tooLong);
+  const cropBtn = $('#cutCropOn');
+  if (cropBtn) {
+    cropBtn.setAttribute('aria-pressed', c.cropOn);
+    $('#cutAsp').hidden = !c.cropOn;
+    $('#cutAsp').querySelectorAll('[data-asp]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.asp === c.aspect));
+    $('#cutCrop').hidden = !c.cropOn;
+    if (c.cropOn) {
+      const box = $('#cutCrop');
+      box.style.left = `${c.crop.x * 100}%`;
+      box.style.top = `${c.crop.y * 100}%`;
+      box.style.width = `${c.crop.w * 100}%`;
+      box.style.height = `${c.crop.h * 100}%`;
+      $('#cutCsize').textContent = c.vw ? `${Math.round(c.crop.w * c.vw / 2) * 2}×${Math.round(c.crop.h * c.vh / 2) * 2}` : `${Math.round(c.crop.w * 100)}% × ${Math.round(c.crop.h * 100)}%`;
+    }
+  }
+}
+
+// O botão de converter e o resumo mudam junto com o trecho, sem redesenhar o painel.
+function cutChanged() {
+  cutPaint();
+  const it = cur();
+  if (it && !isList(state.info)) renderConvert(it, nameFor(state.info, state.sel), state.info.items.length > 1);
+}
+
+function cutLoadPreview() {
+  const v = $('#cutVid');
+  if (!v || v.dataset.src || state.info.partial) return;
+  v.dataset.src = '1';
+  v.src = `/api/preview?u=${encodeURIComponent(state.url)}&i=${state.sel}`;
+}
+
+function cutWire(it) {
+  const c = state.cut, v = $('#cutVid'), tl = $('#cutTl'), msg = $('#cutMsg');
+  const say = (t) => { msg.textContent = t; msg.hidden = !t; };
+  $('#cutTog').addEventListener('click', () => {
+    c.open = !c.open;
+    if (c.open) cutLoadPreview(); else v.pause();
+    cutChanged();
+  });
+  v.addEventListener('loadedmetadata', () => {
+    if (!c.dur && Number.isFinite(v.duration)) c.dur = v.duration;
+    if (v.videoWidth) {
+      c.vw = v.videoWidth;
+      c.vh = v.videoHeight;
+      if (it.kind !== 'audio') $('#cutStage').style.aspectRatio = `${v.videoWidth} / ${v.videoHeight}`;
+    }
+    if (c.start) v.currentTime = c.start;
+    say('');
+    cutChanged();
+  });
+  v.addEventListener('error', () => { if (v.getAttribute('src')) say('Sem prévia pra esse vídeo, mas dá pra cortar pelos tempos.'); });
+  v.addEventListener('timeupdate', () => {
+    $('#cutNow').textContent = fmtT(v.currentTime);
+    const d = cutDur();
+    $('#cutHead').style.left = `${d ? Math.min(100, (v.currentTime / d) * 100) : 0}%`;
+    // Toca só o trecho, em loop.
+    if (!v.paused && cutEnd() && v.currentTime >= cutEnd()) v.currentTime = c.start;
+  });
+  const playIco = () => { $('#cutPlay').innerHTML = svg(v.paused ? 'play' : 'pause', 18); };
+  v.addEventListener('play', playIco);
+  v.addEventListener('pause', playIco);
+  $('#cutPlay').addEventListener('click', () => {
+    if (v.error) { delete v.dataset.src; v.removeAttribute('src'); say(''); }
+    cutLoadPreview();
+    if (v.paused) {
+      if (v.currentTime < c.start || (cutEnd() && v.currentTime >= cutEnd() - 0.05)) v.currentTime = c.start;
+      v.play().catch(() => {});
+    } else v.pause();
+  });
+
+  // Linha do tempo: arrastar as alças muda início/fim; tocar na barra pula o vídeo pra ali.
+  const timeAt = (x) => { const r = tl.getBoundingClientRect(); return Math.min(1, Math.max(0, (x - r.left) / r.width)) * cutDur(); };
+  const setEdge = (edge, t) => {
+    const d = cutDur();
+    if (edge === 'start') c.start = Math.max(0, Math.min(t, (cutEnd() || t + 0.2) - 0.2));
+    else c.end = Math.max(c.start + 0.2, d ? Math.min(t, d) : t);
+    if (v.readyState >= 1) v.currentTime = edge === 'start' ? c.start : c.end;
+    cutChanged();
+  };
+  tl.addEventListener('pointerdown', (e) => {
+    if (!cutDur()) return;
+    const h = e.target.closest('.tl-h');
+    if (!h) { if (v.readyState >= 1) v.currentTime = timeAt(e.clientX); return; }
+    e.preventDefault();
+    h.setPointerCapture(e.pointerId);
+    h.classList.add('drag');
+    v.pause();
+    const move = (ev) => setEdge(h.dataset.edge, timeAt(ev.clientX));
+    const up = () => { h.classList.remove('drag'); h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); };
+    h.addEventListener('pointermove', move);
+    h.addEventListener('pointerup', up);
+    h.addEventListener('pointercancel', up);
+  });
+  tl.addEventListener('keydown', (e) => {
+    const h = e.target.closest('.tl-h');
+    if (!h || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    e.preventDefault();
+    const step = (e.shiftKey ? 1 : 0.1) * (e.key === 'ArrowLeft' ? -1 : 1);
+    setEdge(h.dataset.edge, (h.dataset.edge === 'start' ? c.start : cutEnd()) + step);
+  });
+
+  const typed = (input, edge) => input.addEventListener('change', () => {
+    const t = parseT(input.value);
+    if (Number.isFinite(t)) setEdge(edge, t); else cutPaint();
+  });
+  typed($('#cutIn'), 'start');
+  typed($('#cutOut'), 'end');
+  $('#cutSetIn').addEventListener('click', () => setEdge('start', v.currentTime || 0));
+  $('#cutSetOut').addEventListener('click', () => setEdge('end', v.currentTime || cutDur()));
+  $('#cutClear').addEventListener('click', () => {
+    c.start = 0; c.end = 0; c.cropOn = false; c.crop = { x: 0, y: 0, w: 1, h: 1 }; c.aspect = 'free';
+    if (state.kind === 'gif') cutForGif();
+    cutChanged();
+  });
+
+  if (it.kind === 'audio') return;
+  // Recorte do quadro: caixa com 4 cantos; com proporção travada os cantos mantêm o formato.
+  $('#cutCropOn').addEventListener('click', () => {
+    c.cropOn = !c.cropOn;
+    if (c.cropOn && c.crop.w >= 0.995 && c.crop.h >= 0.995) c.crop = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+    cutChanged();
+  });
+  // Proporção do quadro (largura/altura em pixels) -> proporção da caixa em frações.
+  const fracRatio = (r) => r * ((c.vh || 9) / (c.vw || 16));
+  $('#cutAsp').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-asp]');
+    if (!b) return;
+    c.aspect = b.dataset.asp;
+    if (c.aspect !== 'free') {
+      const fr = fracRatio(Number(c.aspect));
+      let w = 1, h = w / fr;
+      if (h > 1) { h = 1; w = h * fr; }
+      w *= 0.9; h *= 0.9;
+      c.crop = { x: (1 - w) / 2, y: (1 - h) / 2, w, h };
+    }
+    cutChanged();
+  });
+  const box = $('#cutCrop');
+  box.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    box.setPointerCapture(e.pointerId);
+    const handle = e.target.dataset?.h || 'move';
+    const st = $('#cutStage').getBoundingClientRect();
+    const o = { ...c.crop }, x0 = e.clientX, y0 = e.clientY;
+    const fr = c.aspect === 'free' ? 0 : fracRatio(Number(c.aspect));
+    const MIN = 0.06;
+    const move = (ev) => {
+      const dx = (ev.clientX - x0) / st.width, dy = (ev.clientY - y0) / st.height;
+      let { x, y, w, h } = o;
+      if (handle === 'move') {
+        x = Math.min(1 - w, Math.max(0, o.x + dx));
+        y = Math.min(1 - h, Math.max(0, o.y + dy));
+      } else {
+        const left = handle.includes('w'), top = handle.includes('n');
+        // O canto oposto fica parado.
+        const ax = left ? o.x + o.w : o.x, ay = top ? o.y + o.h : o.y;
+        let nw = Math.max(MIN, left ? o.w - dx : o.w + dx);
+        let nh = Math.max(MIN, top ? o.h - dy : o.h + dy);
+        nw = Math.min(nw, left ? ax : 1 - ax);
+        nh = Math.min(nh, top ? ay : 1 - ay);
+        if (fr) { if (nw / nh > fr) nw = nh * fr; else nh = nw / fr; }
+        w = nw; h = nh;
+        x = left ? ax - w : ax;
+        y = top ? ay - h : ay;
+      }
+      c.crop = { x, y, w, h };
+      cutPaint();
+    };
+    const up = () => { box.removeEventListener('pointermove', move); box.removeEventListener('pointerup', up); box.removeEventListener('pointercancel', up); cutChanged(); };
+    box.addEventListener('pointermove', move);
+    box.addEventListener('pointerup', up);
+    box.addEventListener('pointercancel', up);
+  });
+}
+
 // ---------- conversões ----------
 $('#goWrap').addEventListener('click', async (e) => {
   const btn = e.target.closest('#go, #subOnly');
@@ -1464,7 +1863,7 @@ $('#goWrap').addEventListener('click', async (e) => {
   try {
     const job = await api('/api/jobs', {
       method: 'POST',
-      body: JSON.stringify({ url: state.url, ...jobRef(it, state.sel), kind, quality: state.quality[kind], title, subs }),
+      body: JSON.stringify({ url: state.url, ...jobRef(it, state.sel), kind, quality: state.quality[kind], title, subs, clip: cutPayload(kind) }),
     });
     job.platform = i.platform;
     state.jobs.unshift(job);
@@ -1574,7 +1973,11 @@ function jobView(j) {
     ico = 'run'; cls = 'run';
     if (pctNum !== null) sub = `${lbl} · ${j.speed ? esc(j.speed) : esc(j.phase)}${j.eta ? ' · falta ' + esc(j.eta) : ''}`;
   }
-  if (j.status === 'done') { ico = 'ok'; cls = 'ok'; sub = j.note ? `<span class="job-note${j.missed ? ' miss' : ''}">${esc(j.note)}</span>` : `${lbl} · ${fmtSize(j.size)}`; }
+  if (j.status === 'done') {
+    ico = 'ok'; cls = 'ok';
+    const clip = j.clip ? ` · ${j.clip.end ? `${fmtT(j.clip.start).replace(/\.0$/, '')}–${fmtT(j.clip.end).replace(/\.0$/, '')}` : 'recortado'}` : '';
+    sub = j.note ? `<span class="job-note${j.missed ? ' miss' : ''}">${esc(j.note)}</span>` : `${lbl}${esc(clip)} · ${fmtSize(j.size)}`;
+  }
   if (j.status === 'error') { ico = 'err'; cls = 'err'; sub = esc(j.error); }
   if (j.status === 'canceled') { ico = 'x'; sub = `${lbl} · cancelado`; }
   if (j.status === 'expired') { ico = 'wait'; sub = `${lbl} · expirou`; }

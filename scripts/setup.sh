@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Instala tudo que o Convenus precisa, sem mexer na rede do sistema.
 #   - ffmpeg (apt, precisa de sudo)
-#   - yt-dlp, wgcf e wireproxy em ~/.local/bin
+#   - yt-dlp, gallery-dl, wgcf e wireproxy em ~/.local/bin
 #   - bgutil PO token provider em ./pot-provider + plugin do yt-dlp
 #   - conta Cloudflare WARP grátis em ./warp (proxy SOCKS só pro yt-dlp)
 set -euo pipefail
@@ -20,6 +20,12 @@ command -v ffmpeg >/dev/null || sudo DEBIAN_FRONTEND=noninteractive apt-get inst
 if [ ! -x "$BIN/yt-dlp" ]; then
   curl -fsSL -o "$BIN/yt-dlp" https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp
   chmod +x "$BIN/yt-dlp"
+fi
+# gallery-dl (sites de arte: ArtStation, Patreon, boorus; listas do TikTok/Instagram/X) num venv próprio.
+if [ ! -x "$BIN/gallery-dl" ]; then
+  python3 -m venv "$HOME/.local/share/gallery-dl"
+  "$HOME/.local/share/gallery-dl/bin/pip" install -q -U gallery-dl "requests[socks]"
+  ln -sf "$HOME/.local/share/gallery-dl/bin/gallery-dl" "$BIN/gallery-dl"
 fi
 [ -x "$BIN/wgcf" ] || { curl -fsSL -o "$BIN/wgcf" "$(latest_asset ViRb3/wgcf linux_amd64)"; chmod +x "$BIN/wgcf"; }
 [ -x "$BIN/wireproxy" ] || curl -fsSL "$(latest_asset windtf/wireproxy linux_amd64)" | tar xz -C "$BIN" wireproxy
