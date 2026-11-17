@@ -277,7 +277,14 @@
   .tl-h::before { content: ''; position: absolute; inset: -6px -10px; }
   .tl-h:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
   .tl-head { position: absolute; top: -7px; bottom: -7px; width: 3px; margin-left: -1.5px; background: var(--ink); border-radius: 2px; pointer-events: none; }
-  .tl-scale { display: flex; justify-content: space-between; font-size: 11px; margin: 4px 8px 0; font-variant-numeric: tabular-nums; }
+  .tl-scale { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; margin: 4px 8px 0; font-variant-numeric: tabular-nums; }
+  .tl-zoom { padding: 2px 9px; border: 0; border-radius: 8px; background: var(--fill); color: inherit; font: inherit; cursor: pointer; }
+  .tl-zoom[aria-pressed="true"] { background: color-mix(in srgb, var(--ac) 22%, transparent); color: var(--ink); }
+  .tl-zoom:disabled { opacity: .45; cursor: default; }
+  .tl.zoomed { background: repeating-linear-gradient(90deg, var(--fill) 0 10px, color-mix(in srgb, var(--fill) 70%, transparent) 10px 20px); }
+  .cut-keys { display: none; flex-wrap: wrap; gap: 6px 14px; margin-top: 14px; font-size: 12px; }
+  .cut-keys kbd { display: inline-block; min-width: 20px; padding: 1px 6px; margin-right: 3px; border-radius: 6px; background: var(--fill); font: 600 11px/18px ui-monospace, monospace; text-align: center; color: var(--ink); }
+  @media (hover: hover) and (pointer: fine) { .cut-keys { display: flex; } }
   .cut-times { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: end; margin-top: 14px; }
   .tbox { display: flex; flex-direction: column; gap: 6px; font-size: 12px; min-width: 0; }
   .tbox .row { display: flex; gap: 8px; }
@@ -1552,9 +1559,22 @@ addEventListener('resize', () => { if (!$('#pSecs').hidden) moveSegKnob($('#sTab
 const CUT_ASPECTS = [['free', 'Livre'], ['1', '1:1'], ['0.5625', '9:16'], ['1.7778', '16:9'], ['0.8', '4:5']];
 const GIF_MAX = 60;
 function cutReset(key = '') {
-  state.cut = { key, open: false, start: 0, end: 0, dur: 0, vw: 0, vh: 0, cropOn: false, crop: { x: 0, y: 0, w: 1, h: 1 }, aspect: 'free', gif: state.cut?.gif || { fps: 15, width: 480 } };
+  state.cut = { key, open: false, start: 0, end: 0, dur: 0, vw: 0, vh: 0, cropOn: false, crop: { x: 0, y: 0, w: 1, h: 1 }, aspect: 'free', gif: state.cut?.gif || { fps: 15, width: 480 }, zoom: state.cut?.zoom ?? true, fv: null };
 }
+// Janela visível da linha do tempo. Com o zoom ligado e um trecho menor que ~60% do vídeo,
+// mostra só o trecho com uma folga dos lados (mais precisão). Enquanto arrasta, fica parada (fv).
+function cutView() {
+  const c = state.cut, d = cutDur();
+  if (c.fv) return c.fv;
+  if (!d) return [0, 0];
+  const e = cutEnd() || d, len = e - c.start;
+  if (!c.zoom || len >= d * 0.6) return [0, d];
+  const pad = Math.max(len * 0.35, 1);
+  return [Math.max(0, c.start - pad), Math.min(d, e + pad)];
+}
+const cutZoomable = () => { const d = cutDur(); return d > 0 && (cutEnd() || d) - state.cut.start < d * 0.6; };
 cutReset();
+let cutKeys = null; // atalhos do cortador aberto (ligados em cutWire)
 const cutDur = () => state.cut.dur || cur()?.duration || state.info?.duration || 0;
 const cutEnd = () => state.cut.end || cutDur();
 const cutLen = () => Math.max(0, cutEnd() - state.cut.start);
@@ -1638,7 +1658,7 @@ function cutHtml(it) {
         <button class="tl-h" type="button" data-edge="start" id="cutHin" aria-label="Início do trecho (setas pra ajustar)"></button>
         <button class="tl-h" type="button" data-edge="end" id="cutHout" aria-label="Fim do trecho (setas pra ajustar)"></button>
       </div>
-      <div class="tl-scale mut"><span>0:00</span><span id="cutTotal"></span></div>
+      <div class="tl-scale mut"><span id="cutVs">0:00</span><button class="tl-zoom" type="button" id="cutZoom" aria-pressed="true" title="Aproximar a linha do tempo no trecho (Z)">Aproximado</button><span id="cutTotal"></span></div>
       <div class="cut-times">
         <label class="tbox mut">Início<span class="row"><input id="cutIn" inputmode="decimal" autocomplete="off" spellcheck="false"><button class="k" type="button" id="cutSetIn" title="Usar o ponto onde o vídeo está">Aqui</button></span></label>
         <span class="cut-len" id="cutLen"></span>
@@ -1649,6 +1669,16 @@ function cutHtml(it) {
         <span class="sp"></span>
         <button class="k" type="button" id="cutClear">${svg('again', 15, 2)}Limpar</button>
         ${audio ? '' : `<div class="cut-asp" id="cutAsp" hidden>${CUT_ASPECTS.map(([v, l]) => `<button class="k" type="button" data-asp="${v}" aria-pressed="${v === 'free'}">${l}</button>`).join('')}</div>`}
+      </div>
+      <div class="cut-keys mut" aria-hidden="true">
+        <span><kbd>Espaço</kbd>tocar</span>
+        <span><kbd>←</kbd><kbd>→</kbd>${audio ? '0,1 s' : '1 quadro'}</span>
+        <span><kbd>Shift</kbd>+<kbd>←</kbd><kbd>→</kbd>1 s</span>
+        <span><kbd>J</kbd><kbd>L</kbd>5 s</span>
+        <span><kbd>I</kbd><kbd>O</kbd>início/fim aqui</span>
+        <span><kbd>Home</kbd><kbd>End</kbd>ir pro início/fim</span>
+        <span><kbd>Z</kbd>aproximar</span>
+        ${audio ? '' : '<span><kbd>C</kbd>recortar quadro</span>'}
       </div>
     </div>
   </div>`;
@@ -1661,13 +1691,22 @@ function cutPaint() {
   $('#cutTog').setAttribute('aria-expanded', c.open);
   $('#cutBody').hidden = !c.open;
   $('#cutSum').textContent = cutSummary();
-  const pct = (t) => (d ? Math.min(100, Math.max(0, (t / d) * 100)) : 0);
+  const [vs, ve] = cutView();
+  const pct = (t) => (ve > vs ? Math.min(100, Math.max(0, ((t - vs) / (ve - vs)) * 100)) : 0);
   const s = pct(c.start), e = d ? pct(cutEnd()) : 100;
+  const zoomed = d > 0 && (vs > 0.01 || ve < d - 0.01);
+  $('#cutTl').classList.toggle('zoomed', zoomed);
+  $('#cutVs').textContent = fmtT(vs).replace(/\.0$/, '');
+  $('#cutZoom').setAttribute('aria-pressed', c.zoom);
+  $('#cutZoom').disabled = !cutZoomable() && !zoomed;
+  $('#cutZoom').textContent = zoomed ? `Aproximado ${Math.max(1, Math.round(d / (ve - vs)))}×` : c.zoom ? 'Aproximar' : 'Vendo tudo';
+  const vid = $('#cutVid');
+  if (vid) $('#cutHead').style.left = `${pct(vid.currentTime || 0)}%`;
   $('#cutSel').style.left = `${s}%`;
   $('#cutSel').style.width = `${Math.max(0, e - s)}%`;
   $('#cutHin').style.left = `${s}%`;
   $('#cutHout').style.left = `${e}%`;
-  $('#cutTotal').textContent = d ? fmtT(d).replace(/\.\d$/, '') : '';
+  $('#cutTotal').textContent = d ? (zoomed ? fmtT(ve).replace(/\.0$/, '') : fmtT(d).replace(/\.\d$/, '')) : '';
   if (document.activeElement !== $('#cutIn')) $('#cutIn').value = fmtT(c.start);
   if (document.activeElement !== $('#cutOut')) $('#cutOut').value = cutEnd() ? fmtT(cutEnd()) : '';
   const len = cutLen();
@@ -1727,8 +1766,8 @@ function cutWire(it) {
   v.addEventListener('error', () => { if (v.getAttribute('src')) say('Sem prévia pra esse vídeo, mas dá pra cortar pelos tempos.'); });
   v.addEventListener('timeupdate', () => {
     $('#cutNow').textContent = fmtT(v.currentTime);
-    const d = cutDur();
-    $('#cutHead').style.left = `${d ? Math.min(100, (v.currentTime / d) * 100) : 0}%`;
+    const [vs, ve] = cutView();
+    $('#cutHead').style.left = `${ve > vs ? Math.min(100, Math.max(0, ((v.currentTime - vs) / (ve - vs)) * 100)) : 0}%`;
     // Toca só o trecho, em loop.
     if (!v.paused && cutEnd() && v.currentTime >= cutEnd()) v.currentTime = c.start;
   });
@@ -1745,7 +1784,7 @@ function cutWire(it) {
   });
 
   // Linha do tempo: arrastar as alças muda início/fim; tocar na barra pula o vídeo pra ali.
-  const timeAt = (x) => { const r = tl.getBoundingClientRect(); return Math.min(1, Math.max(0, (x - r.left) / r.width)) * cutDur(); };
+  const timeAt = (x) => { const r = tl.getBoundingClientRect(), [vs, ve] = cutView(); return vs + Math.min(1, Math.max(0, (x - r.left) / r.width)) * (ve - vs); };
   const setEdge = (edge, t) => {
     const d = cutDur();
     if (edge === 'start') c.start = Math.max(0, Math.min(t, (cutEnd() || t + 0.2) - 0.2));
@@ -1763,7 +1802,8 @@ function cutWire(it) {
       const seek = (ev) => {
         const t = timeAt(ev.clientX);
         if (v.readyState >= 1) v.currentTime = t;
-        $('#cutHead').style.left = `${(t / cutDur()) * 100}%`;
+        const [vs, ve] = cutView();
+        $('#cutHead').style.left = `${((t - vs) / (ve - vs)) * 100}%`;
         $('#cutNow').textContent = fmtT(t);
       };
       seek(e);
@@ -1777,8 +1817,10 @@ function cutWire(it) {
     h.setPointerCapture(e.pointerId);
     h.classList.add('drag');
     v.pause();
+    // A janela fica parada enquanto arrasta; ao soltar, aproxima no trecho novo.
+    c.fv = cutView();
     const move = (ev) => setEdge(h.dataset.edge, timeAt(ev.clientX));
-    const up = () => { h.classList.remove('drag'); h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); };
+    const up = () => { h.classList.remove('drag'); c.fv = null; cutPaint(); h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); };
     h.addEventListener('pointermove', move);
     h.addEventListener('pointerup', up);
     h.addEventListener('pointercancel', up);
@@ -1797,6 +1839,34 @@ function cutWire(it) {
   });
   typed($('#cutIn'), 'start');
   typed($('#cutOut'), 'end');
+  $('#cutZoom').addEventListener('click', () => { c.zoom = !c.zoom; cutPaint(); });
+
+  // Atalhos (no PC). Ficam ativos enquanto o cortador está aberto e ninguém está digitando.
+  const fps = 30;
+  const seekBy = (dt) => {
+    if (v.readyState < 1) return;
+    v.pause();
+    const d = cutDur() || v.duration || 0;
+    v.currentTime = Math.max(0, Math.min(d || Infinity, v.currentTime + dt));
+  };
+  cutKeys = (e) => {
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    const arrows = k === 'ArrowLeft' || k === 'ArrowRight';
+    if (arrows) {
+      const unit = e.shiftKey ? 1 : (it.kind === 'audio' ? 0.1 : 1 / fps);
+      seekBy(k === 'ArrowLeft' ? -unit : unit);
+    } else if (k === ' ' || k === 'k') $('#cutPlay').click();
+    else if (k === 'j') seekBy(-5);
+    else if (k === 'l') seekBy(5);
+    else if (k === 'i') $('#cutSetIn').click();
+    else if (k === 'o') $('#cutSetOut').click();
+    else if (k === 'Home') { if (v.readyState >= 1) { v.pause(); v.currentTime = c.start; } }
+    else if (k === 'End') { if (v.readyState >= 1) { v.pause(); v.currentTime = Math.max(c.start, (cutEnd() || v.duration) - 1 / fps); } }
+    else if (k === 'z') $('#cutZoom').click();
+    else if (k === 'c' && $('#cutCropOn')) $('#cutCropOn').click();
+    else return false;
+    return true;
+  };
   $('#cutSetIn').addEventListener('click', () => setEdge('start', v.currentTime || 0));
   $('#cutSetOut').addEventListener('click', () => setEdge('end', v.currentTime || cutDur()));
   $('#cutClear').addEventListener('click', () => {
@@ -2664,9 +2734,52 @@ addEventListener('drop', (e) => {
 // Colar (Ctrl+V) uma imagem ou arquivo também.
 document.addEventListener('paste', (e) => {
   const files = [...(e.clipboardData?.files || [])];
-  if (!files.length) return;
+  if (!files.length) {
+    // Ctrl+V de um link em qualquer canto da página (fora de um campo) já busca.
+    const t = e.target, typing = t.closest?.('input, textarea, select, [contenteditable]');
+    const link = cleanUrl((e.clipboardData?.getData('text') || '').trim());
+    if (typing || !/^https?:\/\/\S+$/.test(link)) return;
+    e.preventDefault();
+    if (state.mode !== 'links') setMode('links');
+    $('#url').value = link;
+    lookup(link);
+    return;
+  }
   e.preventDefault();
   addFiles(files);
+});
+
+// Atalhos de teclado do site (no PC):
+//   /  vai pro campo do link · Esc sai do campo · Ctrl+Enter converte/baixa
+//   e, com o cortador aberto, os dele (cutKeys).
+document.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented || e.isComposing) return;
+  const t = e.target;
+  const typing = t.closest?.('input, textarea, select, [contenteditable]');
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    const go = $('#go');
+    if (go && !go.disabled && go.offsetParent) { e.preventDefault(); go.click(); }
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (typing) {
+    if (e.key === 'Escape' && t.id !== 'dialIn') t.blur();
+    return;
+  }
+  if (e.key === '/') {
+    e.preventDefault();
+    if (state.mode !== 'links') setMode('links');
+    $('#url').focus();
+    $('#url').select();
+    return;
+  }
+  const body = $('#cutBody');
+  if (!cutKeys || !body || body.hidden || !body.offsetParent) return;
+  const arrows = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+  // Espaço num botão é o próprio botão; setas só fora de controles que já usam elas (abas, alças).
+  if (e.key === ' ' && t.closest('button, a, [role="tab"], [role="radio"]')) return;
+  if (arrows && t !== document.body && !t.closest('.cut')) return;
+  if (cutKeys(e)) e.preventDefault();
 });
 
 // Aceita ?url=... (e o "Compartilhar" do celular quando instalado como app)
