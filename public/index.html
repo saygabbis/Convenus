@@ -243,6 +243,10 @@
   .chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
   @media (min-width: 640px) { .chips { display: flex; flex-wrap: wrap; gap: 12px; } .chips .k { padding: 11px 18px; } }
   .note { font-size: 12px; margin: -12px 0 20px; }
+  .live-note { display: flex; align-items: center; gap: 9px; margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, #e5484d 12%, transparent); font-size: 13px; line-height: 1.4; }
+  .live-note .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #e5484d; box-shadow: 0 0 0 0 rgb(229 72 77 / .6); animation: livepulse 1.6s infinite; }
+  @keyframes livepulse { 70% { box-shadow: 0 0 0 7px rgb(229 72 77 / 0); } 100% { box-shadow: 0 0 0 0 rgb(229 72 77 / 0); } }
+  @media (prefers-reduced-motion: reduce) { .live-note .dot { animation: none; } }
   /* cortar trecho / recortar quadro */
   .cut { margin: -6px 0 22px; }
   .cut-tog { width: 100%; justify-content: flex-start; padding: 13px 16px; border-radius: 16px; }
@@ -497,7 +501,14 @@
   .pt.on .ck { background: var(--ac); color: #fff; box-shadow: none; transform: scale(1.1); }
   .pt .open { position: absolute; right: 7px; top: 7px; width: 30px; height: 30px; border-radius: 50%; border: 0; padding: 0; display: flex; align-items: center; justify-content: center; background: rgb(0 0 0 / .45); color: #fff; cursor: pointer; opacity: 0; transition: opacity .2s, background .2s; }
   .pt:hover .open, .pt:focus-within .open { opacity: 1; }
-  @media (pointer: coarse) { .pt .open { opacity: 1; } }
+  .pt .open .open-t { display: none; }
+  /* Celular: sem hover nem dica, então vira uma pílula com nome ("Abrir"), sempre visível e fácil de tocar. */
+  @media (pointer: coarse) {
+    .pt .open { opacity: 1; width: auto; height: 30px; padding: 0 11px 0 9px; gap: 5px; border-radius: 15px; background: rgb(0 0 0 / .62); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); font: 600 12px/1 inherit; letter-spacing: .01em; }
+    .pt .open .open-t { display: inline; }
+    .pt .open::before { content: ''; position: absolute; inset: -8px -6px; }
+    .pt .open:active { background: var(--ac); transform: scale(.96); }
+  }
   .pt .open:hover { background: var(--ac); }
   .pt .stack { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(transparent 40%, rgb(0 0 0 / .55)); color: #fff; }
   .pt .tt { font-size: 13px; line-height: 1.4; font-weight: 500; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; padding: 0 2px; }
@@ -1242,6 +1253,18 @@ function renderConvert(it, base, multi) {
     note.hidden = false;
     go = `<button class="cta" type="button" id="go">${svg('dl', 20, 2.4)}Converter pra WAV${suffix}</button>`;
   }
+  // Live da Twitch ainda rolando: baixa o que já foi transmitido (o servidor pega até o ponto atual).
+  if (it.growing) {
+    const LIVE_MAX = 4 * 3600;
+    const len = clipped ? cutLen() : it.duration;
+    const big = len > LIVE_MAX + 1;
+    go = `<p class="note live-note"><span class="dot"></span><span>${big
+      ? `A live já tem ${fmtT(it.duration).replace(/\.\d$/, '')}. Escolhe um trecho de até 4 h no <b>Cortar</b> pra baixar.`
+      : `Live ainda rolando: baixa o que já foi transmitido${clipped ? ' nesse trecho' : ` até agora (${fmtT(it.duration).replace(/\.\d$/, '')})`}.`}</span></p>`
+      + (big ? go.replace('id="go"', 'id="go" disabled') : go);
+    $('#goWrap').innerHTML = go;
+    return;
+  }
   $('#goWrap').innerHTML = go + subsBlock(it);
 }
 
@@ -1447,7 +1470,7 @@ function secTile(x, n, s, d) {
   const sub = [x.views ? `${fmtCount(x.views)} views` : ''].filter(Boolean).join(' · ');
   return `<div class="pt${on ? ' on' : ''}" data-n="${n}" tabindex="0" role="${pick ? 'checkbox' : 'button'}"${pick ? ` aria-checked="${on}"` : ''} style="animation-delay:${Math.min(n % 24, 16) * 28}ms">
     <div class="pic">${pic}${x.kind === 'list' ? `<span class="stack">${svg('list', 26, 2)}</span>` : ''}${pick ? `<span class="ck">${svg('ok', 14, 3)}</span>` : ''}
-      ${pick ? `<button class="open" type="button" data-open="${n}" aria-label="Abrir sozinho" title="Abrir sozinho">${svg('open', 15)}</button>` : ''}${tag ? `<span class="tag">${esc(tag)}</span>` : ''}</div>
+      ${pick ? `<button class="open" type="button" data-open="${n}" aria-label="Abrir sozinho" title="Abrir sozinho">${svg('open', 15)}<span class="open-t" aria-hidden="true">Abrir</span></button>` : ''}${tag ? `<span class="tag">${esc(tag)}</span>` : ''}</div>
     <div class="tt">${esc(x.label || 'Sem título')}</div>${sub ? `<div class="ts">${esc(sub)}</div>` : ''}
   </div>`;
 }

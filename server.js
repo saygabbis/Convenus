@@ -20,6 +20,7 @@ const convert = require('./lib/convert');
 const compressor = require('./lib/compress');
 const gallery = require('./lib/gallery');
 const clipper = require('./lib/clip');
+const vod = require('./lib/vod');
 
 // Tudo que o servidor cria (downloads, envios, banco) fica só pro dono do processo (tem outro
 // usuário na VPS).
@@ -411,7 +412,15 @@ async function ytdlpItems(url) {
     const heights = [...new Set(formats.filter((f) => f.vcodec !== 'none' && f.height && !/portrait/i.test(f.format_id || '')).map((f) => f.height))].sort((a, b) => b - a);
     // Alguns sites (Facebook…) não dizem codec nem altura: é vídeo, só sem resoluções conhecidas (0 = melhor).
     const videoish = heights.length > 0 || formats.some((f) => f.vcodec !== 'none' && /^(mp4|webm|mov|mkv|flv|m3u8)$/.test(f.ext || ''));
+    // VOD da Twitch de uma live que ainda está rolando: o yt-dlp marca como "ao vivo", mas o que já
+    // foi gravado dá pra baixar (lib/vod.js). Guarda as versões (playlist de cada qualidade).
+    const growing = Boolean(e.is_live) && /^TwitchVod$/i.test(e.extractor_key || '');
+    const variants = growing
+      ? formats.filter((f) => /m3u8/.test(f.protocol || '') && f.url && !/portrait/i.test(f.format_id || ''))
+        .map((f) => ({ h: f.vcodec === 'none' || /audio/i.test(f.format_id || '') ? 0 : f.height || 0, url: f.url }))
+      : null;
     return {
+      ...(growing ? { growing: true, liveVariants: variants } : {}),
       kind: videoish ? 'video' : 'audio',
       native: true,
       index: entries.length > 1 ? i + 1 : null,
@@ -422,7 +431,7 @@ async function ytdlpItems(url) {
       duration: e.duration || 0,
       width: e.width || 0,
       height: e.height || 0,
-      isLive: Boolean(e.is_live),
+      isLive: Boolean(e.is_live) && !growing,
       subs: subsList(e),
     };
   });
@@ -861,7 +870,7 @@ function releaseYt(job) {
 function finishJob(job, r) {
   if (job.finished) return;
   // Recorte do quadro / GIF: depois do download, mais uma passada no ffmpeg (a vaga continua ocupada).
-  if (r.code === 0 && !job.posted && job.status !== 'canceled' && !shuttingDown && job.mode !== 'direct' && job.mode !== 'file'
+  if (r.code === 0 && !job.posted && job.status !== 'canceled' && !shuttingDown && job.mode !== 'direct' && job.mode !== 'vod' && job.mode !== 'file'
     && clipper.needsPost(job.opts?.clip, job.kind) && job.file && inside(job.file, job.dir) && fs.existsSync(job.file)) {
     job.posted = true;
     return postProcess(job);
@@ -946,15 +955,20 @@ function postProcess(job) {
 }
 
 // Vídeo/áudio direto (X, Instagram, TikTok…): o ffmpeg lê o arquivo original e converte o áudio.
-function startDirectJob(job) {
+// live: { input, offset, len } quando vem de uma live da Twitch ainda gravando (playlist montada aqui).
+function startDirectJob(job, live = null) {
   const ext = job.kind;
   const c = job.opts?.clip;
   job.file = path.join(job.dir, `${safeName(job.title)}.${ext}`);
   job.phase = ext === 'gif' ? 'Fazendo o GIF' : c && ext === 'mp4' ? 'Cortando o vídeo' : ext === 'mp4' ? 'Baixando vídeo' : `Convertendo pra ${ext.toUpperCase()}`;
   // Trecho: o ffmpeg pula direto pro início (-ss antes do -i) e para no fim.
-  const seek = c ? [...(c.start > 0 ? ['-ss', String(c.start)] : []), ...(c.end ? ['-to', String(c.end)] : [])] : [];
+  // Na live a playlist já começa no trecho: só o deslocamento dentro do 1º pedaço (depois do -i).
+  const seek = live ? [] : c ? [...(c.start > 0 ? ['-ss', String(c.start)] : []), ...(c.end ? ['-to', String(c.end)] : [])] : [];
+  const after = live ? ['-ss', String(live.offset), '-t', String(live.len)] : [];
+  const input = live ? ['-protocol_whitelist', 'file,http,https,tcp,tls', '-i', live.input] : ['-i', job.url];
   let codec;
   if (ext === 'gif') codec = ['-filter_complex', clipper.gifFilter(c), '-loop', '0', '-an'];
+  else if (ext === 'mp4' && live && !c?.crop) codec = ['-c', 'copy', '-movflags', '+faststart'];
   else if (ext === 'mp4' && c) {
     // Cortado (e talvez recortado no quadro): recodifica pra cortar no quadro exato.
     codec = [...(c.crop ? ['-vf', clipper.cropFilter(c.crop)] : []), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
@@ -962,13 +976,36 @@ function startDirectJob(job) {
   } else if (ext === 'mp4') codec = ['-c', 'copy', '-bsf:a', 'aac_adtstoasc', '-movflags', '+faststart'];
   else codec = ['-vn', ...(ext === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', `${job.quality}k`] : ['-c:a', 'pcm_s16le'])];
   const h = proc.run('ffmpeg', [
-    '-hide_banner', '-nostdin', '-y', '-user_agent', 'Convenus/1.0', ...seek, '-i', job.url,
+    '-hide_banner', '-nostdin', '-y', ...(live ? [] : ['-user_agent', 'Convenus/1.0']), ...seek, ...input, ...after,
     '-map_metadata', '-1', ...(ext === 'gif' ? [] : ['-metadata', `title=${job.title}`]), ...codec,
     '-progress', 'pipe:1', '-nostats', job.file,
-  ], runOpts(ffProgress(job, c ? clipper.clipLen(c, job.duration) : job.duration)));
+  ], runOpts(ffProgress(job, live ? live.len : c ? clipper.clipLen(c, job.duration) : job.duration)));
   job.proc = h.child;
   job.stop = h.stop;
   h.done.then((r) => finishJob(job, r));
+}
+
+const fmtHours = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h ? `${h} h${m ? ` ${m} min` : ''}` : `${m} min`; };
+
+// Live da Twitch ainda rolando: lê a playlist agora, monta uma fechada só com o trecho e baixa.
+async function startVodJob(job) {
+  job.phase = 'Lendo a live';
+  persist(job);
+  const c = job.opts?.clip;
+  try {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 30_000);
+    const r = await fetch(job.url, { signal: ac.signal, headers: { 'user-agent': gallery.BROWSER_UA } }).finally(() => clearTimeout(timer));
+    if (!r.ok) throw new Error(`A Twitch recusou a live (HTTP ${r.status}).`);
+    const s = vod.subset(await r.text(), job.url, c?.start || 0, c?.end || 0);
+    if (s.len > vod.MAX_SEC + 1) throw new Error(`Esse trecho tem ${Math.round(s.len / 3600)} h: escolhe até ${vod.MAX_SEC / 3600} h no Cortar.`);
+    const input = path.join(job.dir, 'trecho.m3u8');
+    fs.writeFileSync(input, s.text, { mode: 0o600 });
+    job.duration = s.len;
+    startDirectJob(job, { input, offset: s.offset, len: s.len });
+  } catch (e) {
+    finishJob(job, { code: 1, stderr: `ERRO: ${e.name === 'AbortError' ? 'A Twitch demorou demais pra responder.' : e.message}` });
+  }
 }
 
 // Arquivo enviado: converte com o programa certo (lib/convert.js).
@@ -1004,6 +1041,7 @@ async function startJob(job) {
   fs.mkdirSync(job.dir, { recursive: true });
   persist(job);
   if (job.mode === 'direct') return startDirectJob(job);
+  if (job.mode === 'vod') return startVodJob(job);
   if (job.mode === 'file') return startFileJob(job);
   // Tem a busca guardada: baixa direto dela, sem esperar a vez no YouTube.
   if (job.preload) {
@@ -1892,6 +1930,17 @@ async function handle(req, res) {
       quality = MP3_BITRATES.includes(String(body.quality)) ? String(body.quality) : '320';
     }
     const title = String(body.title || info.title || 'arquivo');
+    // Live da Twitch ainda rolando: baixa o que já foi gravado (lib/vod.js), sem o yt-dlp.
+    if (item.growing) {
+      if (kind === 'srt') return sendJson(res, 400, { error: 'Live em andamento não tem legenda.' });
+      const len = (clip?.end || item.duration || 0) - (clip?.start || 0);
+      if (len > vod.MAX_SEC + 1) return sendJson(res, 400, { error: `A live já tem ${fmtHours(item.duration)}: escolhe um trecho de até ${vod.MAX_SEC / 3600} h no Cortar.` });
+      const v = vod.pickVariant(item.liveVariants, kind, quality);
+      if (!v) return sendJson(res, 400, { error: 'A Twitch não mandou as versões dessa live. Tenta de novo.' });
+      return sendJson(res, 201, publicJob(createJob({
+        kind, quality, title, duration: len, opts: clip ? { clip } : {}, platform: info.platform || '', device, ip, mode: 'vod', url: v.url,
+      })));
+    }
     const common = { kind, quality, title, duration: item.duration || info.duration || 0, opts: { ...(subs ? { subs } : {}), ...(clip ? { clip } : {}) }, platform: info.platform || '', device, ip };
     const spec = item.search
       // Música (Spotify, Deezer, Apple Music): baixa a mesma faixa da aba de músicas do YouTube Music.
