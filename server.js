@@ -823,6 +823,7 @@ function publicJob(job) {
     size: job.size || 0,
     createdAt: job.createdAt,
     finishedAt: job.finishedAt || 0,
+    expiresAt: job.status === 'done' ? expiryOf(job) : 0,
     ...(job.opts?.clip ? { clip: { start: job.opts.clip.start, end: job.opts.clip.end, crop: Boolean(job.opts.clip.crop) } } : {}),
     // Conversão de arquivo: de que formato veio e se o resultado é imagem (botão de copiar).
     ...(job.mode === 'file' ? {
@@ -918,6 +919,7 @@ function finishJob(job, r) {
   job.speed = '';
   job.eta = '';
   job.finishedAt = Date.now();
+  if (job.status === 'done') capPile(job.finishedAt);
   persist(job);
   pump();
 }
@@ -1266,10 +1268,33 @@ function recoverJobs() {
   return requeued;
 }
 
+// Arquivo grande ocupa o disco à toa: com mais de 1 GB fica só 10 min (em vez de 1 h). E se os
+// prontos somarem 1 GB ou mais, todos passam a ter no máximo 10 min a partir daí.
+const BIG_BYTES = Number(process.env.BIG_FILE_GB || 1) * 1024 ** 3;
+const PILE_BYTES = Number(process.env.PILE_GB || 1) * 1024 ** 3;
+const SHORT_TTL_MS = Number(process.env.SHORT_TTL_MIN || 10) * 60_000;
+function expiryOf(job) {
+  if (!job.finishedAt) return 0;
+  const base = job.finishedAt + (job.size > BIG_BYTES ? SHORT_TTL_MS : JOB_TTL_MS);
+  return job.expiresAt ? Math.min(job.expiresAt, base) : base;
+}
+function capPile(now = Date.now()) {
+  let total = 0;
+  const done = [];
+  for (const job of jobs.values()) {
+    if (job.status !== 'done' || !job.finishedAt) continue;
+    total += job.size || 0;
+    done.push(job);
+  }
+  if (total < PILE_BYTES) return;
+  for (const job of done) job.expiresAt = Math.min(expiryOf(job), now + SHORT_TTL_MS);
+}
+
 // Limpeza seletiva: só o que passou do prazo, nunca tarefa ativa.
 function cleanup(now = Date.now()) {
+  capPile(now);
   for (const [id, job] of jobs) {
-    if (ACTIVE.has(job.status) || !job.finishedAt || now - job.finishedAt <= JOB_TTL_MS) continue;
+    if (ACTIVE.has(job.status) || !job.finishedAt || now <= expiryOf(job)) continue;
     fs.rmSync(job.dir, { recursive: true, force: true });
     if (job.status === 'done') {
       job.status = 'expired';
@@ -1299,7 +1324,7 @@ setInterval(() => {
   } catch (e) {
     console.error(`[limpeza] ${e.message}`);
   }
-}, 2 * 60_000).unref();
+}, 60_000).unref();
 
 // ---------- HTTP ----------
 

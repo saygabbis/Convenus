@@ -472,6 +472,7 @@
   .opt .chips .k[aria-pressed="true"] { background: var(--ac-soft); }
   .adv .chk { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; cursor: pointer; user-select: none; }
   .job-note { font-size: 12px; color: var(--ok); }
+  .job-exp { color: #e8a33d; white-space: nowrap; }
   .job-note.miss { color: var(--err); }
 
   /* perfil: categorias */
@@ -677,7 +678,7 @@
           Nada por aqui ainda.<br><span id="emptyText">Cola um link pra começar.</span>
         </div>
       </section>
-      <footer class="mut">Só este aparelho vê as suas conversões. Tudo é apagado 1 hora depois de pronto.</footer>
+      <footer class="mut">Só este aparelho vê as suas conversões. Tudo é apagado 1 hora depois de pronto (arquivo de mais de 1 GB, em 10 minutos).</footer>
     </div>
   </div>
 </div>
@@ -2084,7 +2085,16 @@ function jobLabel(j) {
 }
 
 const HOUR = 3_600_000;
-const recent = (j) => ACTIVE.includes(j.status) || !j.finishedAt || Date.now() - j.finishedAt < HOUR;
+const recent = (j) => ACTIVE.includes(j.status) || !j.finishedAt || Date.now() < (j.expiresAt || j.finishedAt + HOUR);
+// O "apaga em X min" anda sozinho; quando o prazo passa, a linha vira "expirou".
+setInterval(() => {
+  let changed = false;
+  for (const j of state.jobs) {
+    if (j.status === 'done' && j.expiresAt && Date.now() > j.expiresAt + 30_000) { j.status = 'expired'; changed = true; }
+  }
+  if (changed) saveJobs();
+  if (state.jobs.some((j) => j.status === 'done' && j.expiresAt && j.expiresAt - Date.now() < 15 * 60_000) || changed) renderJobs();
+}, 20_000);
 function saveJobs() {
   store('gc-jobs', state.jobs.filter((j) => j.status !== 'expired' && recent(j)).slice(0, 30));
 }
@@ -2106,6 +2116,9 @@ function jobView(j) {
     ico = 'ok'; cls = 'ok';
     const clip = j.clip ? ` · ${j.clip.end ? `${fmtT(j.clip.start).replace(/\.0$/, '')}–${fmtT(j.clip.end).replace(/\.0$/, '')}` : 'recortado'}` : '';
     sub = j.note ? `<span class="job-note${j.missed ? ' miss' : ''}">${esc(j.note)}</span>` : `${lbl}${esc(clip)} · ${fmtSize(j.size)}`;
+    // Arquivo grande (ou muita coisa pronta junta) some em 10 min: avisa quanto falta.
+    const left = j.expiresAt ? j.expiresAt - Date.now() : Infinity;
+    if (left < 15 * 60_000) sub += ` <span class="job-exp">· apaga ${left < 60_000 ? 'já já' : `em ${Math.ceil(left / 60_000)} min`}</span>`;
   }
   if (j.status === 'error') { ico = 'err'; cls = 'err'; sub = esc(j.error); }
   if (j.status === 'canceled') { ico = 'x'; sub = `${lbl} · cancelado`; }
@@ -2195,6 +2208,11 @@ async function poll() {
         Object.assign(j, upd);
         delete j.recheck;
         if (fresh && !wasDone && j.status === 'done' && !j.image) triggerDownload(`/api/jobs/${j.id}/file`);
+      }
+      // Muita coisa pronta junta encurta o prazo das que já estavam prontas também.
+      for (const j of state.jobs) {
+        const u = byId.get(j.id);
+        if (u && j.status === 'done' && u.expiresAt) j.expiresAt = u.expiresAt;
       }
     } catch { /* sem rede ou limite: tenta de novo no próximo ciclo */ }
     saveJobs();
